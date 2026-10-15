@@ -1,0 +1,1973 @@
+{
+  "account_operations": 0,
+  "checked_utc": "2026-10-15T22:51:16.826805+00:00",
+  "deadline": "2026-10-16T06:45:51Z",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "evaluation": {
+    "candidate": {
+      "books": [
+        {
+          "close_drawdown": 0.02432820186267203,
+          "close_drawdown_percent": 2.432820186267203,
+          "concentration": {
+            "active_weeks": 23,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.22893733133470398,
+            "largest_week_share": 0.21540909326733076,
+            "without_best_week": 149.4358246541542
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.024635625461428064,
+          "drawdown_percent": 2.4635625461428066,
+          "failed_entries": 0,
+          "fees": 51.21493250499999,
+          "fills": 38,
+          "funding": -1.7027039544059999,
+          "gross": 430.945899999997,
+          "half_year_net": [
+            98.48571969304976,
+            264.27635175635623
+          ],
+          "holding_bars": 16435,
+          "insufficient": null,
+          "long_bars": 6920,
+          "monthly_net": {
+            "2025-01": -27.036627962181228,
+            "2025-02": -2.4588255912804016,
+            "2025-03": 134.4336224499475,
+            "2025-04": -145.98365024790473,
+            "2025-05": 139.53120104446862,
+            "2025-06": 0.0,
+            "2025-07": 46.79761535934267,
+            "2025-08": -29.159264900928974,
+            "2025-09": 29.95456076031769,
+            "2025-10": 168.26066792991332,
+            "2025-11": 171.24134533291908,
+            "2025-12": -122.81857272520756
+          },
+          "net": 362.762071449406,
+          "net_percent": 3.6276207144940598,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1745193600000
+            }
+          ],
+          "position_time_fraction": 0.1616599779666352,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 0.8740262551988287,
+            "ordinary": 0.9424110128697121
+          },
+          "short_bars": 9515,
+          "slippage": 18.671599999998605,
+          "stopped": null,
+          "turnover": 93118.05909999998
+        },
+        {
+          "close_drawdown": 0.026891107391634486,
+          "close_drawdown_percent": 2.6891107391634486,
+          "concentration": {
+            "active_weeks": 23,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.24002528194235312,
+            "largest_week_share": 0.22647790993128228,
+            "without_best_week": -3.9100371608492424
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.02720246463506779,
+          "drawdown_percent": 2.720246463506779,
+          "failed_entries": 0,
+          "fees": 102.44740891000001,
+          "fills": 38,
+          "funding": -1.7027039544059999,
+          "gross": 430.945899999997,
+          "half_year_net": [
+            17.271135913049875,
+            184.6740591313519
+          ],
+          "holding_bars": 16435,
+          "insufficient": null,
+          "long_bars": 6920,
+          "monthly_net": {
+            "2025-01": -32.83909620217855,
+            "2025-02": -17.51361537128105,
+            "2025-03": 117.44148840994421,
+            "2025-04": -167.74885043790346,
+            "2025-05": 117.93120951446872,
+            "2025-06": 0.0,
+            "2025-07": 35.07821030933883,
+            "2025-08": -39.941650325929004,
+            "2025-09": 24.065954300316662,
+            "2025-10": 153.8739679399132,
+            "2025-11": 155.38986389791899,
+            "2025-12": -143.79228699020678
+          },
+          "net": 201.94519504440177,
+          "net_percent": 2.019451950444018,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1744588800000
+            }
+          ],
+          "position_time_fraction": 0.1616599779666352,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 0.4951801358064234,
+            "ordinary": 0.5356420643353121
+          },
+          "short_bars": 9515,
+          "slippage": 128.2559999999999,
+          "stopped": null,
+          "turnover": 93134.00809999999
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "start_ms": 1736726400000
+    },
+    "chain-delay": {
+      "books": [
+        {
+          "close_drawdown": 0.03584294932609804,
+          "close_drawdown_percent": 3.5842949326098044,
+          "concentration": {
+            "active_weeks": 25,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.3825640676745055,
+            "largest_week_share": 0.3438292473859581,
+            "without_best_week": -360.25712563378147
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.036176680623367805,
+          "drawdown_percent": 3.6176680623367803,
+          "failed_entries": 0,
+          "fees": 51.16620129500001,
+          "fills": 38,
+          "funding": -2.758053492243199,
+          "gross": -140.86049999999886,
+          "half_year_net": [
+            -136.80555117590302,
+            -71.11509662685603
+          ],
+          "holding_bars": 16435,
+          "insufficient": null,
+          "long_bars": 6920,
+          "monthly_net": {
+            "2025-01": 13.894707841081981,
+            "2025-02": -50.4890117964369,
+            "2025-03": -2.481618244331912,
+            "2025-04": -36.820284435980284,
+            "2025-05": -60.90934454023591,
+            "2025-06": 0.0,
+            "2025-07": 5.893273828472957,
+            "2025-08": -31.41033966183204,
+            "2025-09": -7.552295796454928,
+            "2025-10": 119.49947758148119,
+            "2025-11": 5.845611244640168,
+            "2025-12": -163.39082382316337
+          },
+          "net": -207.92064780275905,
+          "net_percent": -2.0792064780275905,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739145600000
+            }
+          ],
+          "position_time_fraction": 0.1616599779666352,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": -0.6529773941865646,
+            "ordinary": -0.6765799119884612
+          },
+          "short_bars": 9515,
+          "slippage": 18.652000000000207,
+          "stopped": null,
+          "turnover": 93029.4569
+        },
+        {
+          "close_drawdown": 0.047555993806401575,
+          "close_drawdown_percent": 4.755599380640158,
+          "concentration": {
+            "active_weeks": 25,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.4028618521027362,
+            "largest_week_share": 0.3526659269945343,
+            "without_best_week": -480.48535678378175
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.04789025417355211,
+          "drawdown_percent": 4.789025417355211,
+          "failed_entries": 0,
+          "fees": 102.34813732000003,
+          "fills": 38,
+          "funding": -2.758053492243199,
+          "gross": -140.86049999999886,
+          "half_year_net": [
+            -202.71275002090078,
+            -141.02993380685803
+          ],
+          "holding_bars": 16435,
+          "insufficient": null,
+          "long_bars": 6920,
+          "monthly_net": {
+            "2025-01": 8.713919761083162,
+            "2025-02": -61.347690676437196,
+            "2025-03": -6.313332709331007,
+            "2025-04": -50.35452276597789,
+            "2025-05": -93.41112363023785,
+            "2025-06": 0.0,
+            "2025-07": -2.6511593615268794,
+            "2025-08": -41.90325224183107,
+            "2025-09": -19.31279828645711,
+            "2025-10": 102.48520922148236,
+            "2025-11": -1.3026392353604024,
+            "2025-12": -178.34529390316493
+          },
+          "net": -343.7426838277588,
+          "net_percent": -3.437426838277588,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739145600000
+            }
+          ],
+          "position_time_fraction": 0.1616599779666352,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": -1.080600569831852,
+            "ordinary": -1.130960083269221
+          },
+          "short_bars": 9515,
+          "slippage": 103.29210000000118,
+          "stopped": null,
+          "turnover": 93043.76120000001
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "start_ms": 1736726400000
+    },
+    "execution-delay": {
+      "books": [
+        {
+          "close_drawdown": 0.02555367583793685,
+          "close_drawdown_percent": 2.555367583793685,
+          "concentration": {
+            "active_weeks": 23,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.23374894948161704,
+            "largest_week_share": 0.22003548248662438,
+            "without_best_week": 105.15845515414367
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.02586194828463377,
+          "drawdown_percent": 2.586194828463377,
+          "failed_entries": 0,
+          "fees": 51.23031710500001,
+          "fills": 38,
+          "funding": -1.7027039544059999,
+          "gross": 388.54709999999614,
+          "half_year_net": [
+            78.55484219804748,
+            241.78544465134837
+          ],
+          "holding_bars": 16454,
+          "insufficient": null,
+          "long_bars": 6928,
+          "monthly_net": {
+            "2025-01": -28.083109802180843,
+            "2025-02": -10.291191931277353,
+            "2025-03": 131.05526830994313,
+            "2025-04": -160.25022618290677,
+            "2025-05": 146.12410180446932,
+            "2025-06": 0.0,
+            "2025-07": 48.542056499340106,
+            "2025-08": -28.70379538593079,
+            "2025-09": 28.18661986031657,
+            "2025-10": 162.23864914491242,
+            "2025-11": 165.01303487791847,
+            "2025-12": -133.4911203452084
+          },
+          "net": 320.34028684939585,
+          "net_percent": 3.2034028684939586,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1745193600000
+            }
+          ],
+          "position_time_fraction": 0.1618468681145735,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 0.7661574295721779,
+            "ordinary": 0.8355096345797732
+          },
+          "short_bars": 9526,
+          "slippage": 18.679200000001096,
+          "stopped": null,
+          "turnover": 93146.0311
+        },
+        {
+          "close_drawdown": 0.027384236967179402,
+          "close_drawdown_percent": 2.7384236967179403,
+          "concentration": {
+            "active_weeks": 23,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.23649861445590953,
+            "largest_week_share": 0.22330863165428255,
+            "without_best_week": -29.123934470844688
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.027695805592623465,
+          "drawdown_percent": 2.7695805592623466,
+          "failed_entries": 0,
+          "fees": 102.47716424000001,
+          "fills": 38,
+          "funding": -1.7027039544059999,
+          "gross": 388.54709999999614,
+          "half_year_net": [
+            -8.860329946946877,
+            185.00626966135314
+          ],
+          "holding_bars": 16454,
+          "insufficient": null,
+          "long_bars": 6928,
+          "monthly_net": {
+            "2025-01": -35.666792762178375,
+            "2025-02": -19.844208571275885,
+            "2025-03": 124.21204156994463,
+            "2025-04": -196.97110784790675,
+            "2025-05": 119.4097376644695,
+            "2025-06": 0.0,
+            "2025-07": 38.466042059342726,
+            "2025-08": -38.884918285930326,
+            "2025-09": 23.52103674031605,
+            "2025-10": 152.93527663991335,
+            "2025-11": 156.8402901279187,
+            "2025-12": -147.87145762020737
+          },
+          "net": 176.14593971440627,
+          "net_percent": 1.7614593971440626,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1745193600000
+            }
+          ],
+          "position_time_fraction": 0.1618468681145735,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 0.4257154752824177,
+            "ordinary": 0.468833739907969
+          },
+          "short_bars": 9526,
+          "slippage": 111.626700000001,
+          "stopped": null,
+          "turnover": 93161.05840000001
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "start_ms": 1736726400000
+    },
+    "fixed": {
+      "books": [
+        {
+          "close_drawdown": 0.07339533091607137,
+          "close_drawdown_percent": 7.339533091607136,
+          "concentration": {
+            "active_weeks": 38,
+            "complete_cycles": 42,
+            "largest_cycle_share": 0.21570678921874015,
+            "largest_week_share": 0.12749106730765192,
+            "without_best_week": -599.741999767486
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07405872433107125,
+          "drawdown_percent": 7.405872433107125,
+          "failed_entries": 0,
+          "fees": 112.883927035,
+          "fills": 84,
+          "funding": -1.4619068899691983,
+          "gross": -326.9556999999968,
+          "half_year_net": [
+            -155.84045024581246,
+            -323.687869899215
+          ],
+          "holding_bars": 36009,
+          "insufficient": null,
+          "long_bars": 16979,
+          "monthly_net": {
+            "2025-01": -206.8051055162232,
+            "2025-02": -357.5086827576324,
+            "2025-03": 117.35441165554221,
+            "2025-04": 127.55808941446776,
+            "2025-05": -36.12460484902658,
+            "2025-06": 199.68544180705976,
+            "2025-07": -49.625150996582306,
+            "2025-08": 161.41458963904552,
+            "2025-09": 19.351787210754992,
+            "2025-10": -454.8290957524332,
+            "2025-11": 0.0,
+            "2025-12": 0.0
+          },
+          "net": -479.52832014502746,
+          "net_percent": -4.795283201450275,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739750400000
+            }
+          ],
+          "position_time_fraction": 0.35419617563739375,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 19030,
+          "slippage": 41.15060000000193,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1760131200000
+          },
+          "turnover": 205243.5037000001
+        },
+        {
+          "close_drawdown": 0.08691861357300294,
+          "close_drawdown_percent": 8.691861357300294,
+          "concentration": {
+            "active_weeks": 38,
+            "complete_cycles": 42,
+            "largest_cycle_share": 0.23752542136962276,
+            "largest_week_share": 0.13999132420644084,
+            "without_best_week": -956.4852228624877
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.09027688859300306,
+          "drawdown_percent": 9.027688859300307,
+          "failed_entries": 0,
+          "fees": 225.68873162000003,
+          "fills": 84,
+          "funding": -1.4619068899691983,
+          "gross": -326.9556999999968,
+          "half_year_net": [
+            -355.2350387308161,
+            -487.8743859992137
+          ],
+          "holding_bars": 36009,
+          "insufficient": null,
+          "long_bars": 16979,
+          "monthly_net": {
+            "2025-01": -222.6785580062242,
+            "2025-02": -392.9651323276321,
+            "2025-03": 84.58297055054027,
+            "2025-04": 87.17878800946892,
+            "2025-05": -70.17073450902717,
+            "2025-06": 158.81762755205818,
+            "2025-07": -69.12957025658216,
+            "2025-08": 122.84148464404825,
+            "2025-09": -14.51509637424715,
+            "2025-10": -527.0712040124326,
+            "2025-11": 0.0,
+            "2025-12": 0.0
+          },
+          "net": -843.1094247300298,
+          "net_percent": -8.431094247300297,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739750400000
+            }
+          ],
+          "position_time_fraction": 0.35419617563739375,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 19030,
+          "slippage": 291.9269000000022,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1760131200000
+          },
+          "turnover": 205171.57420000012
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        1,
+        0,
+        1
+      ],
+      "start_ms": 1736726400000
+    },
+    "passive": {
+      "books": [
+        {
+          "close_drawdown": 0.08068112624953136,
+          "close_drawdown_percent": 8.068112624953136,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 1,
+            "largest_cycle_share": null,
+            "largest_week_share": 0.8593894771424849,
+            "without_best_week": -633.5593345643392
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.0810500115589181,
+          "drawdown_percent": 8.10500115589181,
+          "failed_entries": 0,
+          "fees": 2.46158055,
+          "fills": 2,
+          "funding": 24.414292168351803,
+          "gross": -439.54819999999927,
+          "half_year_net": [
+            -467.3236727183503,
+            0.0
+          ],
+          "holding_bars": 16355,
+          "insufficient": null,
+          "long_bars": 16355,
+          "monthly_net": {
+            "2025-01": 186.8362054339923,
+            "2025-02": -479.2105061469774,
+            "2025-03": -174.94937200536515,
+            "2025-04": 0.0,
+            "2025-05": 0.0,
+            "2025-06": 0.0,
+            "2025-07": 0.0,
+            "2025-08": 0.0,
+            "2025-09": 0.0,
+            "2025-10": 0.0,
+            "2025-11": 0.0,
+            "2025-12": 0.0
+          },
+          "net": -467.3236727183503,
+          "net_percent": -4.673236727183503,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739145600000
+            }
+          ],
+          "position_time_fraction": 0.16087307208057916,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 0,
+          "slippage": 0.899599999999773,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1741632900000
+          },
+          "turnover": 4475.601
+        },
+        {
+          "close_drawdown": 0.08118888228262382,
+          "close_drawdown_percent": 8.118888228262382,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 1,
+            "largest_cycle_share": null,
+            "largest_week_share": 0.8579899500452067,
+            "without_best_week": -640.5645094943393
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08118888228262382,
+          "drawdown_percent": 8.118888228262382,
+          "failed_entries": 0,
+          "fees": 4.917278080000001,
+          "fills": 2,
+          "funding": 24.414292168351803,
+          "gross": -439.54819999999927,
+          "half_year_net": [
+            -476.2351702483502,
+            0.0
+          ],
+          "holding_bars": 16355,
+          "insufficient": null,
+          "long_bars": 16355,
+          "monthly_net": {
+            "2025-01": 184.92988283399245,
+            "2025-02": -479.2105061469774,
+            "2025-03": -181.95454693536522,
+            "2025-04": 0.0,
+            "2025-05": 0.0,
+            "2025-06": 0.0,
+            "2025-07": 0.0,
+            "2025-08": 0.0,
+            "2025-09": 0.0,
+            "2025-10": 0.0,
+            "2025-11": 0.0,
+            "2025-12": 0.0
+          },
+          "net": -476.2351702483502,
+          "net_percent": -4.762351702483502,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1739145600000
+            }
+          ],
+          "position_time_fraction": 0.16087307208057916,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 0,
+          "slippage": 7.3553999999998485,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1741632900000
+          },
+          "turnover": 4470.2528
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        0,
+        1,
+        1
+      ],
+      "start_ms": 1736726400000
+    },
+    "price": {
+      "books": [
+        {
+          "close_drawdown": 0.048190179724394794,
+          "close_drawdown_percent": 4.81901797243948,
+          "concentration": {
+            "active_weeks": 40,
+            "complete_cycles": 44,
+            "largest_cycle_share": 0.15156674115665014,
+            "largest_week_share": 0.16612750687131256,
+            "without_best_week": 248.57545165202828
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.04896087819342529,
+          "drawdown_percent": 4.896087819342529,
+          "failed_entries": 0,
+          "fees": 118.48229008000006,
+          "fills": 88,
+          "funding": 1.4698790227755976,
+          "gross": 639.9428999999964,
+          "half_year_net": [
+            555.266321659059,
+            -78.4744907618333
+          ],
+          "holding_bars": 38060,
+          "insufficient": null,
+          "long_bars": 19895,
+          "monthly_net": {
+            "2025-01": 226.02103786504813,
+            "2025-02": -135.7629262617611,
+            "2025-03": 323.44841815491964,
+            "2025-04": 182.29297715035318,
+            "2025-05": -52.32050566846192,
+            "2025-06": 11.587320418961099,
+            "2025-07": -95.61968097928184,
+            "2025-08": 169.75756801353054,
+            "2025-09": 65.86698432648154,
+            "2025-10": -27.652736022628233,
+            "2025-11": -232.6780814620488,
+            "2025-12": 41.851455362113484
+          },
+          "net": 476.79183089722574,
+          "net_percent": 4.767918308972257,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1745798400000
+            }
+          ],
+          "position_time_fraction": 0.3743704752911552,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 1.0128545721645834,
+            "ordinary": 0.7531738934959025
+          },
+          "short_bars": 18165,
+          "slippage": 43.19889999999863,
+          "stopped": null,
+          "turnover": 215422.34559999997
+        },
+        {
+          "close_drawdown": 0.06444082791811964,
+          "close_drawdown_percent": 6.444082791811964,
+          "concentration": {
+            "active_weeks": 40,
+            "complete_cycles": 44,
+            "largest_cycle_share": 0.1664174867698139,
+            "largest_week_share": 0.18260926114578774,
+            "without_best_week": -114.28035159797219
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.06522500338524424,
+          "drawdown_percent": 6.5225003385244245,
+          "failed_entries": 0,
+          "fees": 237.01637333,
+          "fills": 88,
+          "funding": 1.4698790227755976,
+          "gross": 639.9428999999964,
+          "half_year_net": [
+            357.9139047240533,
+            -258.7870570768282
+          ],
+          "holding_bars": 38060,
+          "insufficient": null,
+          "long_bars": 19895,
+          "monthly_net": {
+            "2025-01": 195.4061233250468,
+            "2025-02": -144.29307265675925,
+            "2025-03": 269.22954689492144,
+            "2025-04": 127.68733157034694,
+            "2025-05": -85.25722921346096,
+            "2025-06": -4.858795196041683,
+            "2025-07": -111.38744039928133,
+            "2025-08": 147.2970908835323,
+            "2025-09": 48.00001921648254,
+            "2025-10": -76.58157951762769,
+            "2025-11": -293.6646093870513,
+            "2025-12": 27.549462127117295
+          },
+          "net": 99.12684764722508,
+          "net_percent": 0.9912684764722508,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1745798400000
+            }
+          ],
+          "position_time_fraction": 0.3743704752911552,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 0.2491655692833793,
+            "ordinary": 0.18488213708856863
+          },
+          "short_bars": 18165,
+          "slippage": 302.32979999999844,
+          "stopped": null,
+          "turnover": 215469.43030000007
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1767225600000,
+      "parameters": [
+        0,
+        -1,
+        1
+      ],
+      "start_ms": 1736726400000
+    }
+  },
+  "evidence_sha256": {
+    ".artifacts/btc-fee-pressure-20261016/closeout.py": "ff9ebffda8fd8089c47db330472b4c096c991fa6ce1c09c6d705a9975a90cade",
+    ".artifacts/btc-fee-pressure-20261016/decision-audit.json": "1755821753d77b03d683bdb38402234a6e8ec12dcbdc8b182e5b9ea353315d12",
+    ".artifacts/btc-fee-pressure-20261016/economic-attempt.json": "0813b4f7587f2cc0ab8a7fcbb145cd50439ab2c9b182ef2e962b189f2810c221",
+    ".artifacts/btc-fee-pressure-20261016/eval-candidate-attempt.json": "ad6aca161a57c919f552868e20cf624f6944801d05f27a70fdbf554209b87cdf",
+    ".artifacts/btc-fee-pressure-20261016/eval-candidate-audit.json": "d2281fe9e36356270183cf980fedfce98012929ca1ce898c4cfb585621a0231b",
+    ".artifacts/btc-fee-pressure-20261016/eval-candidate.json": "3590a13f8f161573c7cb6bae4d14aa78d17d5b84c0e3257c9ef62b7d8da06b67",
+    ".artifacts/btc-fee-pressure-20261016/eval-chain-delay-attempt.json": "b250c9ca0ba96785ef2ee70ec51b04fe69562231ccdebc81ac0eb7d772e54c43",
+    ".artifacts/btc-fee-pressure-20261016/eval-chain-delay-audit.json": "e27ecfa46f5d819646c44dec7901609fc9be633efe8176aa062bcc169c729441",
+    ".artifacts/btc-fee-pressure-20261016/eval-chain-delay.json": "0043df5a6a719107d2ae7ccd488becf1a847d9bfa2b63102fdfda661bfab4b30",
+    ".artifacts/btc-fee-pressure-20261016/eval-execution-delay-attempt.json": "8424c0620b1fd9a15a34524e3ae77c00084219831f76f81423dc7c1e5be69cd7",
+    ".artifacts/btc-fee-pressure-20261016/eval-execution-delay-audit.json": "1b8967b3620195829205d1892a26070cf53766cc33ed99f613c3b508ccc7a635",
+    ".artifacts/btc-fee-pressure-20261016/eval-execution-delay.json": "8b2e1fde338c01c1997fc84656342817ac909bb0a19e5c038c07148d3ed38c5a",
+    ".artifacts/btc-fee-pressure-20261016/eval-feature-lag3-audit.json": "d4ff0fe4ee196b1d4676e0f52fed9d83378160c97411e31c5a70dbd84baf823f",
+    ".artifacts/btc-fee-pressure-20261016/eval-feature-lag4-audit.json": "288dbe11c0c602763bf0c49ec5c3ce0f73ec79320fea28d77df7774350fc2dbe",
+    ".artifacts/btc-fee-pressure-20261016/eval-fixed-attempt.json": "97d010aa8149b21f7318654a83180b53817313d306ed66ae000f7410b0f3a373",
+    ".artifacts/btc-fee-pressure-20261016/eval-fixed-audit.json": "3c660f4d51a6577cb7113886ba02bb747e48b4c74823a4964a25e1075b2fd461",
+    ".artifacts/btc-fee-pressure-20261016/eval-fixed.json": "5dc519de75e5b5ad99d57935b34688cc0ff9210749beb5e59dbf5a318c21d5a8",
+    ".artifacts/btc-fee-pressure-20261016/eval-passive-attempt.json": "280dab5f5f9fc9662953df75336542473cc6c46e5f48a5a09e3ea2137d02c83f",
+    ".artifacts/btc-fee-pressure-20261016/eval-passive-audit.json": "3580aba5a035fafd1bb46af4133614253aa49df089044691349ef8b1d859a950",
+    ".artifacts/btc-fee-pressure-20261016/eval-passive.json": "82be7857b62d38e37d6f149d1b01fd36d8a3ab1ba27577982b5101c29e4e0a2e",
+    ".artifacts/btc-fee-pressure-20261016/eval-price-attempt.json": "b63022dcb1f82de754359e4739dc33a1fd313f078183edebf537ed15592e825c",
+    ".artifacts/btc-fee-pressure-20261016/eval-price-audit.json": "157e44d3fc6e9f7255662af3e3aa6a15b7b65165047a63c2dcc208163b9c7a6c",
+    ".artifacts/btc-fee-pressure-20261016/eval-price.json": "c33c1093ae079c3725a12112020215fa464139c2d926ff171f4a7e8be9d9b932",
+    ".artifacts/btc-fee-pressure-20261016/evaluation-freeze.json": "5a7566c3e25935d148512b15f00e7d0067d7a6d293727a2a8b96df4809cee3cc",
+    ".artifacts/btc-fee-pressure-20261016/final-tests.json": "1d3d8eb91141127337af95d38ee2fa841a0266b93189df6bb18caf279f014f97",
+    ".artifacts/btc-fee-pressure-20261016/final-tests.log": "ebe0fa408370236160fe1c23287bfe6cb1d585fe01ad041999ac12cafc5b2d01",
+    ".artifacts/btc-fee-pressure-20261016/freeze.json": "544ad810ba97ce2df3d7f4eb99a38aba46c8a54f9a5cd169d656bc1e76610678",
+    ".artifacts/btc-fee-pressure-20261016/input-audit.json": "a2790441068af03df333deeeafa21dd3b94d3fad2189d0cb461e7f64d5c9f520",
+    ".artifacts/btc-fee-pressure-20261016/log-density.json": "fcb925e369cd98c560c40f6d54be098b7a58e0f9b4fe5e55195e9bb16aeb8efa",
+    ".artifacts/btc-fee-pressure-20261016/model-freeze.json": "ad9e590bfcad7381fa3242cac26e50b85d358d27066f685837961ebdfcf8a841",
+    ".artifacts/btc-fee-pressure-20261016/result.json": "3f55ddee2140c754ccad7d2cca07cee45e29ea850149cf1d9a7e8595262601ef",
+    ".artifacts/btc-fee-pressure-20261016/selection-audit.json": "f407489798e648d2f36d6619b4d104e0cbc15f914094b3e940b5f87458183096",
+    ".artifacts/btc-fee-pressure-20261016/selection.json": "77c1e1a72683f18a5a47f36cda5b79797e7a95e976d8083a2850e77d651a43f7",
+    ".artifacts/btc-fee-pressure-20261016/stage.py": "0b2bf37f0b8c980bf24c9d673926161855b2c99407df716e72646f780296a363",
+    ".artifacts/btc-fee-pressure-20261016/test-fee-before-fixture-fix.py": "6d6bfead80830304af1ea45ab83f35dc875301cfe49d94b9fb922d489a9f5ccf",
+    ".artifacts/btc-fee-pressure-20261016/train-00-attempt.json": "c400ccd3cafb16f281d7d2052b360f34aae8990eab24e5bf4b675d7ce9c786bf",
+    ".artifacts/btc-fee-pressure-20261016/train-00-audit.json": "923c535dc7d478a620071d800a403dd5847fb33090662f78faaf475ab7701ce5",
+    ".artifacts/btc-fee-pressure-20261016/train-00.json": "c6db49e029941704ed303bb0af95422805fc7d097ff89cc622ec828bf56b9cd9",
+    ".artifacts/btc-fee-pressure-20261016/train-01-attempt.json": "668ad284691757a93573e641c86103b0025c66aba277d33d8d6488e784b81120",
+    ".artifacts/btc-fee-pressure-20261016/train-01-audit.json": "7a8d5e2c0f6972f6576cf0fb9828ebe62ec29c6def0a640577e72722234c2991",
+    ".artifacts/btc-fee-pressure-20261016/train-01.json": "ed10a23e62f34fa366d116059326ddb143877a13cba523c58d1343ab3be496ea",
+    ".artifacts/btc-fee-pressure-20261016/train-02-attempt.json": "9e0411a8ef03018dce11f0707a9338c04afc4af1e3b83ac03d78e4ed7e573a90",
+    ".artifacts/btc-fee-pressure-20261016/train-02-audit.json": "7d2cc31a6d50cf16ecbb0654db1a97d52e2147af032292e1b55316efca43606c",
+    ".artifacts/btc-fee-pressure-20261016/train-02.json": "c0ea52712a7e0903a6d8c2d5dfc817d40558bce4262b17de7f859d7083639168",
+    ".artifacts/btc-fee-pressure-20261016/train-03-attempt.json": "23b5bdc92640f191c225dec7e298afb833cba69d1fda0bc65aeed882a1e06714",
+    ".artifacts/btc-fee-pressure-20261016/train-03-audit.json": "66966a6525c80f432a96e095ec5dbbfad486b074932d80b97e06a7a21478ba18",
+    ".artifacts/btc-fee-pressure-20261016/train-03.json": "e13c87d58b1f95effd68c99c3acb9288c8325e99bdfd49f42b708dd63a1a29fb",
+    ".artifacts/btc-fee-pressure-20261016/train-04-attempt.json": "e6ed96c5d0071f98b7507277bb5e2716fbf81c6ba40dd7ed62aa8bdefa557291",
+    ".artifacts/btc-fee-pressure-20261016/train-04-audit.json": "695f4b33bf30b24403dcc6076d826a6b3b2f20939c7a9a3539f0061975ba9abf",
+    ".artifacts/btc-fee-pressure-20261016/train-04.json": "8bbe2aba18e73169f8cd8783aa51a463dfece14a9045ceb291c35e280d8150fd",
+    ".artifacts/btc-fee-pressure-20261016/train-05-attempt.json": "ce1dbb3df641af05e9abeb10b98a06653b7c60401d981e71a48ad092f6061a61",
+    ".artifacts/btc-fee-pressure-20261016/train-05-audit.json": "6e1278c038545a75d1dfb158640ff37a357c97ed589361699ae885b09869d9e5",
+    ".artifacts/btc-fee-pressure-20261016/train-05.json": "3c0786479ba15df1eb3a23aec24ff0b87a7ad497c1382cb136a2a0ceecc2eee0",
+    ".artifacts/btc-fee-pressure-20261016/train-06-attempt.json": "4cdc743ddd806587e02b3b8c9f1e633fd9b99fd93ba2bc84db059e8b86ea57cf",
+    ".artifacts/btc-fee-pressure-20261016/train-06-audit.json": "e7ab6cbf8e40070729571b651e7cf9810925ec119791338d85412ff12ef7eb90",
+    ".artifacts/btc-fee-pressure-20261016/train-06.json": "30292266493c5ccab7ab56a83ea6013696b3b292b9e6ec021d9219a84f16420d",
+    ".artifacts/btc-fee-pressure-20261016/train-07-attempt.json": "2980cbdc35f8cffa38e9182f8110fbd6a4ab6116786532f7b6360b679574f886",
+    ".artifacts/btc-fee-pressure-20261016/train-07-audit.json": "e722ec359cf1d99bb756c15ba7a492666c956013c5c3f7d4292a81c2d43d89da",
+    ".artifacts/btc-fee-pressure-20261016/train-07.json": "991566a200108084b2b010523d8cbfb94b8045cb94b14e4f6770aa3b46507ec5",
+    ".artifacts/btc-fee-pressure-20261016/train-feature-audit.json": "d4ff0fe4ee196b1d4676e0f52fed9d83378160c97411e31c5a70dbd84baf823f"
+  },
+  "g4": false,
+  "increment_vs_fixed": [
+    842.2903915944335,
+    1045.0546197744316
+  ],
+  "increment_vs_price": [
+    -114.02975944781974,
+    102.8183473971767
+  ],
+  "independent_confirmation": false,
+  "input_sha256": {
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.body": "066c83c297c5dbdb4a4f69afa99a53327f8bddb7ee2209a924b41a600f148cf4",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.body": "7af48da6fdc71fe0d7fe17fa83d6b8ef5db20a116391b167f9e70e7772193afb",
+    ".artifacts/frozen-history-transfer-20261001/replay.csv": "b192ef1bdcada0cce7f55bf5c2beda08bef6f82e7f8e6645bc00df9be41b50d3",
+    ".artifacts/mvp-reference-history-20260921/prepared/replay.csv": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47"
+  },
+  "new_full_ctest": false,
+  "new_market_inputs": 0,
+  "online_learning_proven": false,
+  "point_in_time_certified": false,
+  "production_changes": 0,
+  "protected_files": 6145,
+  "qualified_candidates": 0,
+  "result": {
+    "account_operations": 0,
+    "completed_utc": "2026-10-15T22:50:15.285115+00:00",
+    "compute_seconds": 12.832761334022507,
+    "decision": {
+      "diversity_failed": true,
+      "economic_failures": [
+        "PRICE_INCREMENT",
+        "DELAY_NET"
+      ],
+      "hard_risk": false,
+      "learned": true,
+      "reasons": [
+        "PRICE_INCREMENT",
+        "DELAY_NET"
+      ],
+      "status": "NO_GO_ECONOMIC"
+    },
+    "deployments": 0,
+    "evaluation_paths": 6,
+    "g4": false,
+    "independent_books": 28,
+    "independent_confirmation": false,
+    "market_attempts": 1,
+    "new_input_gets": 0,
+    "protected_files": 6145,
+    "qualified_candidates": 0,
+    "selection": {
+      "fixed_index": 2,
+      "mechanism_index": 1,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "price_index": 4,
+      "status": "TRAINING_ADMITTED"
+    },
+    "source_freeze_sha256": "ad9e590bfcad7381fa3242cac26e50b85d358d27066f685837961ebdfcf8a841",
+    "status": "BATCH_COMPLETED",
+    "training_paths": 8
+  },
+  "source_sha256": {
+    "tools/audit_btc_fee_pressure.py": "8cdb95b24b6c5fc04412d4c67f346907d34a6cfa70d9f552ab4c272e47330f95",
+    "tools/audit_btc_old_output.py": "f35d25a695de2bbf6688507b41afacbfd8914cd7522a1e29fe31b581799503b8",
+    "tools/btc_fee_pressure.py": "86fa2d8133c86b742c4a4d50834fd8f911b81e1adf985b05e824a4fe9bc795a4",
+    "tools/btc_old_output_model.py": "277632c0d6971d5893ca44569cad60de0d5d349e2de1c0630a6413baee8ae760",
+    "tools/run_btc_fee_pressure.py": "e1273f5740728b3c2ad9bd19ec16de72f5954e1f1986316eea141042a09b38db",
+    "tools/test_btc_fee_pressure.py": "4101c13ef03f7ad82504c9ccc2b81f6e3d0c6168ba1c4057eef7a2f36c30dd1a"
+  },
+  "stage_start": "2026-10-15T22:45:51Z",
+  "status": "CLOSED_NO_GO",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 100
+  },
+  "training": [
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07324520443553592,
+          "close_drawdown_percent": 7.324520443553592,
+          "concentration": {
+            "active_weeks": 4,
+            "complete_cycles": 6,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 1.0,
+            "without_best_week": -509.4103326440363
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07393873739912799,
+          "drawdown_percent": 7.393873739912799,
+          "failed_entries": 0,
+          "fees": 16.1282132,
+          "fills": 12,
+          "funding": 5.723858126353803,
+          "gross": -270.28249999999935,
+          "half_year_net": null,
+          "holding_bars": 4435,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -127.12496822061985,
+            "2021-02": -170.92110310573662,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -298.04607132635647,
+          "net_percent": -2.9804607132635645,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.04362409505823103,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2705,
+          "slippage": 5.91149999999965,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612257000000
+          },
+          "turnover": 29324.023999999998
+        },
+        {
+          "close_drawdown": 0.08206492446780678,
+          "close_drawdown_percent": 8.206492446780677,
+          "concentration": {
+            "active_weeks": 4,
+            "complete_cycles": 6,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 1.0,
+            "without_best_week": -593.3123941190333
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08206492446780678,
+          "drawdown_percent": 8.206492446780677,
+          "failed_entries": 0,
+          "fees": 32.29864682,
+          "fills": 12,
+          "funding": 5.723858126353803,
+          "gross": -270.28249999999935,
+          "half_year_net": null,
+          "holding_bars": 4435,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -199.8535020506206,
+            "2021-02": -201.60060289573448,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -401.4541049463551,
+          "net_percent": -4.014541049463551,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.04362409505823103,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2705,
+          "slippage": 93.14910000000052,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612257000000
+          },
+          "turnover": 29362.4062
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        -1,
+        0,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.04676038617059016,
+          "close_drawdown_percent": 4.6760386170590165,
+          "concentration": {
+            "active_weeks": 19,
+            "complete_cycles": 18,
+            "largest_cycle_share": 0.1541427740963651,
+            "largest_week_share": 0.15714281400081972,
+            "without_best_week": 1136.8620232231006
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.04830638268521181,
+          "drawdown_percent": 4.830638268521181,
+          "failed_entries": 0,
+          "fees": 49.147507255,
+          "fills": 36,
+          "funding": 10.840043832074386,
+          "gross": 1509.9459999999963,
+          "half_year_net": null,
+          "holding_bars": 15570,
+          "insufficient": null,
+          "long_bars": 9515,
+          "monthly_net": {
+            "2021-01": 163.28634290142145,
+            "2021-02": 16.256837482120318,
+            "2021-03": 275.58998781305127,
+            "2021-04": 508.6374651061269,
+            "2021-05": 0.0,
+            "2021-06": 311.8397391689905,
+            "2021-07": 28.224606951011083,
+            "2021-08": 114.57226112471471,
+            "2021-09": 109.01365831050498,
+            "2021-10": 86.17842140584253,
+            "2021-11": -110.10295152557774,
+            "2021-12": -71.4964198252801
+          },
+          "net": 1431.999948912926,
+          "net_percent": 14.319999489129259,
+          "performance_alerts": [],
+          "position_time_fraction": 0.15315155807365438,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 2.2448393549607877,
+            "ordinary": 2.014080897800021
+          },
+          "short_bars": 6055,
+          "slippage": 17.95849999999995,
+          "stopped": null,
+          "turnover": 89359.10409999998
+        },
+        {
+          "close_drawdown": 0.05223073850053406,
+          "close_drawdown_percent": 5.223073850053406,
+          "concentration": {
+            "active_weeks": 19,
+            "complete_cycles": 18,
+            "largest_cycle_share": 0.1614276364017516,
+            "largest_week_share": 0.16375195188830216,
+            "without_best_week": 928.3307092255291
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.05311417515766229,
+          "drawdown_percent": 5.311417515766229,
+          "failed_entries": 0,
+          "fees": 98.3106212,
+          "fills": 36,
+          "funding": 10.840043832074386,
+          "gross": 1509.9459999999963,
+          "half_year_net": null,
+          "holding_bars": 15570,
+          "insufficient": null,
+          "long_bars": 9515,
+          "monthly_net": {
+            "2021-01": 153.0517299414205,
+            "2021-02": -1.7355506978783524,
+            "2021-03": 261.19286265805204,
+            "2021-04": 474.1211533261285,
+            "2021-05": 0.0,
+            "2021-06": 292.170867788991,
+            "2021-07": 13.350357936011278,
+            "2021-08": 109.0595994197156,
+            "2021-09": 93.26773136050724,
+            "2021-10": 63.34632642584438,
+            "2021-11": -118.49143929557795,
+            "2021-12": -132.4249038952803
+          },
+          "net": 1206.908734967934,
+          "net_percent": 12.06908734967934,
+          "performance_alerts": [],
+          "position_time_fraction": 0.15315155807365438,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": 1.9536772691644133,
+            "ordinary": 1.7193608392265365
+          },
+          "short_bars": 6055,
+          "slippage": 193.88660000000036,
+          "stopped": null,
+          "turnover": 89373.29199999999
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.06448423412687047,
+          "close_drawdown_percent": 6.448423412687047,
+          "concentration": {
+            "active_weeks": 15,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.2980147049897196,
+            "largest_week_share": 0.3551694841920223,
+            "without_best_week": -206.38942880372815
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.06593321406695374,
+          "drawdown_percent": 6.593321406695374,
+          "failed_entries": 0,
+          "fees": 51.73925537,
+          "fills": 38,
+          "funding": -4.768050337036162,
+          "gross": 269.134,
+          "half_year_net": null,
+          "holding_bars": 15887,
+          "insufficient": null,
+          "long_bars": 7237,
+          "monthly_net": {
+            "2021-01": 86.99756073061508,
+            "2021-02": 526.0276015704876,
+            "2021-03": -153.35118421557127,
+            "2021-04": -256.4315831184904,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": 203.24239496704104,
+          "net_percent": 2.0324239496704104,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1616371200000
+            }
+          ],
+          "position_time_fraction": 0.15626967264715141,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 8650,
+          "slippage": 18.920400000000317,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1619144700000
+          },
+          "turnover": 94071.3734
+        },
+        {
+          "close_drawdown": 0.08077711776723169,
+          "close_drawdown_percent": 8.077711776723168,
+          "concentration": {
+            "active_weeks": 15,
+            "complete_cycles": 19,
+            "largest_cycle_share": 0.3180870100010772,
+            "largest_week_share": 0.3722352149769145,
+            "without_best_week": -452.0106453887347
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08223890883053041,
+          "drawdown_percent": 8.223890883053041,
+          "failed_entries": 0,
+          "fees": 103.55924348,
+          "fills": 38,
+          "funding": -4.768050337036162,
+          "gross": 269.134,
+          "half_year_net": null,
+          "holding_bars": 15887,
+          "insufficient": null,
+          "long_bars": 7237,
+          "monthly_net": {
+            "2021-01": 17.774466610611853,
+            "2021-02": 443.09206525048285,
+            "2021-03": -225.52930325557645,
+            "2021-04": -302.70742174848783,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -67.37019314296958,
+          "net_percent": -0.6737019314296958,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1614556800000
+            }
+          ],
+          "position_time_fraction": 0.15626967264715141,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 8650,
+          "slippage": 237.71300000000005,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1619144700000
+          },
+          "turnover": 94144.7668
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        1,
+        0,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07277470961254455,
+          "close_drawdown_percent": 7.277470961254455,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 4,
+            "largest_cycle_share": null,
+            "largest_week_share": 1.0,
+            "without_best_week": -514.6363055334532
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07309660464496848,
+          "drawdown_percent": 7.309660464496847,
+          "failed_entries": 0,
+          "fees": 11.166332375000001,
+          "fills": 8,
+          "funding": 6.457829228218809,
+          "gross": -490.16249999999854,
+          "half_year_net": null,
+          "holding_bars": 2704,
+          "insufficient": null,
+          "long_bars": 865,
+          "monthly_net": {
+            "2021-01": -170.93632430141952,
+            "2021-02": -23.83838548212225,
+            "2021-03": -317.0941518196778,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -511.86886160321956,
+          "net_percent": -5.118688616032196,
+          "performance_alerts": [],
+          "position_time_fraction": 0.026597418948693736,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1839,
+          "slippage": 4.0822000000000624,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1616576700000
+          },
+          "turnover": 20302.4225
+        },
+        {
+          "close_drawdown": 0.07993446124170403,
+          "close_drawdown_percent": 7.993446124170403,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 4,
+            "largest_cycle_share": null,
+            "largest_week_share": null,
+            "without_best_week": -601.9797968882231
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.0802166628595492,
+          "drawdown_percent": 8.02166628595492,
+          "failed_entries": 0,
+          "fees": 22.34976766,
+          "fills": 8,
+          "funding": 6.457829228218809,
+          "gross": -490.16249999999854,
+          "half_year_net": null,
+          "holding_bars": 2704,
+          "insufficient": null,
+          "long_bars": 865,
+          "monthly_net": {
+            "2021-01": -194.07440650142235,
+            "2021-02": -50.88345834212123,
+            "2021-03": -357.0219320446795,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -601.9797968882231,
+          "net_percent": -6.019797968882231,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1613952000000
+            }
+          ],
+          "position_time_fraction": 0.026597418948693736,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1839,
+          "slippage": 83.00969999999994,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1616576700000
+          },
+          "turnover": 20317.9706
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        1,
+        0,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07728189305494522,
+          "close_drawdown_percent": 7.728189305494522,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 7,
+            "largest_cycle_share": 0.5281344324344661,
+            "largest_week_share": 0.5222277689899063,
+            "without_best_week": -303.5741465687661
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08097078630221251,
+          "drawdown_percent": 8.097078630221251,
+          "failed_entries": 0,
+          "fees": 19.430337905,
+          "fills": 14,
+          "funding": -26.818669439292904,
+          "gross": 24.11649999999827,
+          "half_year_net": null,
+          "holding_bars": 5639,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 514.256811762556,
+            "2021-02": -489.86558022826284,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": 24.391231534293183,
+          "net_percent": 0.24391231534293184,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1613347200000
+            }
+          ],
+          "position_time_fraction": 0.05546702864337425,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3044,
+          "slippage": 7.1135999999995025,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612790700000
+          },
+          "turnover": 35327.8871
+        },
+        {
+          "close_drawdown": 0.08163778810517519,
+          "close_drawdown_percent": 8.163778810517519,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 7,
+            "largest_cycle_share": 0.5483888982632671,
+            "largest_week_share": 0.5072840044783427,
+            "without_best_week": -385.4947098787652
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08375645754186274,
+          "drawdown_percent": 8.375645754186275,
+          "failed_entries": 0,
+          "fees": 38.88884406000001,
+          "fills": 14,
+          "funding": -26.818669439292904,
+          "gross": 24.11649999999827,
+          "half_year_net": null,
+          "holding_bars": 5639,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 442.79875296255705,
+            "2021-02": -531.0319275832626,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -88.23317462070554,
+          "net_percent": -0.8823317462070555,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1613347200000
+            }
+          ],
+          "position_time_fraction": 0.05546702864337425,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3044,
+          "slippage": 100.27950000000006,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612790700000
+          },
+          "turnover": 35353.494600000005
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        -1,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.0710164646371177,
+          "close_drawdown_percent": 7.101646463711769,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 6,
+            "largest_cycle_share": 0.5381487522742902,
+            "largest_week_share": 0.6363830531523262,
+            "without_best_week": -468.07776918365926
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07146797030438244,
+          "drawdown_percent": 7.146797030438244,
+          "failed_entries": 0,
+          "fees": 16.771752965,
+          "fills": 12,
+          "funding": -10.0275365550326,
+          "gross": -264.4894999999997,
+          "half_year_net": null,
+          "holding_bars": 4589,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 185.9164694993051,
+            "2021-02": -463.2881859092813,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -277.3717164099762,
+          "net_percent": -2.773717164099762,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1613347200000
+            }
+          ],
+          "position_time_fraction": 0.04513888888888889,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1994,
+          "slippage": 6.13800000000011,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612821600000
+          },
+          "turnover": 30494.0963
+        },
+        {
+          "close_drawdown": 0.08127063398666344,
+          "close_drawdown_percent": 8.127063398666344,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 6,
+            "largest_cycle_share": 0.5438673569233374,
+            "largest_week_share": 0.6727088472622473,
+            "without_best_week": -555.2484837786578
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08145792172236437,
+          "drawdown_percent": 8.145792172236437,
+          "failed_entries": 0,
+          "fees": 33.590006560000006,
+          "fills": 12,
+          "funding": -10.0275365550326,
+          "gross": -264.4894999999997,
+          "half_year_net": null,
+          "holding_bars": 4589,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 97.77841759430521,
+            "2021-02": -490.92688759928024,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -393.148470004975,
+          "net_percent": -3.9314847000497504,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1613347200000
+            }
+          ],
+          "position_time_fraction": 0.04513888888888889,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1994,
+          "slippage": 105.09649999999988,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612821600000
+          },
+          "turnover": 30536.369599999998
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        -1,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07526673841367129,
+          "close_drawdown_percent": 7.5266738413671295,
+          "concentration": {
+            "active_weeks": 3,
+            "complete_cycles": 5,
+            "largest_cycle_share": 0.8294472004184859,
+            "largest_week_share": 1.0,
+            "without_best_week": -643.1256418287885
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07531117565985998,
+          "drawdown_percent": 7.531117565985998,
+          "failed_entries": 0,
+          "fees": 13.689866520000002,
+          "fills": 10,
+          "funding": 8.253238419941102,
+          "gross": -520.9309999999987,
+          "half_year_net": null,
+          "holding_bars": 3752,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -547.893304939942,
+            "2021-02": 0.0,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -547.893304939942,
+          "net_percent": -5.47893304939942,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.0369058860560277,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2022,
+          "slippage": 5.019199999999626,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1611879600000
+          },
+          "turnover": 24890.666400000002
+        },
+        {
+          "close_drawdown": 0.08160229614710908,
+          "close_drawdown_percent": 8.160229614710907,
+          "concentration": {
+            "active_weeks": 3,
+            "complete_cycles": 5,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 1.0,
+            "without_best_week": -706.8452942187905
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08160229614710908,
+          "drawdown_percent": 8.160229614710907,
+          "failed_entries": 0,
+          "fees": 27.38350769,
+          "fills": 10,
+          "funding": 8.253238419941102,
+          "gross": -520.9309999999987,
+          "half_year_net": null,
+          "holding_bars": 3752,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -642.7086461099443,
+            "2021-02": 0.0,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -642.7086461099443,
+          "net_percent": -6.427086461099443,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.0369058860560277,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2022,
+          "slippage": 86.14089999999989,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1611879600000
+          },
+          "turnover": 24894.097900000004
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        1,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07306243739507125,
+          "close_drawdown_percent": 7.306243739507125,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 11,
+            "largest_cycle_share": 0.5716864467312176,
+            "largest_week_share": 0.49418580204280427,
+            "without_best_week": -609.594983263567
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07312427564919284,
+          "drawdown_percent": 7.312427564919284,
+          "failed_entries": 0,
+          "fees": 30.40273368,
+          "fills": 22,
+          "funding": 142.15048509699687,
+          "gross": -144.28649999999652,
+          "half_year_net": null,
+          "holding_bars": 8737,
+          "insufficient": null,
+          "long_bars": 5277,
+          "monthly_net": {
+            "2021-01": -216.0469351493084,
+            "2021-02": 206.04473458741995,
+            "2021-03": -317.9568182151088,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -327.95901877699725,
+          "net_percent": -3.2795901877699727,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.08593995908089393,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3460,
+          "slippage": 11.119300000000191,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1615187700000
+          },
+          "turnover": 55277.697600000014
+        },
+        {
+          "close_drawdown": 0.08225598061296108,
+          "close_drawdown_percent": 8.225598061296107,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 11,
+            "largest_cycle_share": 0.6077565724913518,
+            "largest_week_share": 0.5196645654291391,
+            "without_best_week": -769.1945214635653
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08225598061296108,
+          "drawdown_percent": 8.225598061296107,
+          "failed_entries": 0,
+          "fees": 60.80727048,
+          "fills": 22,
+          "funding": 142.15048509699687,
+          "gross": -144.28649999999652,
+          "half_year_net": null,
+          "holding_bars": 8737,
+          "insufficient": null,
+          "long_bars": 5277,
+          "monthly_net": {
+            "2021-01": -303.9864335943075,
+            "2021-02": 120.4527531274216,
+            "2021-03": -341.57247511010974,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -525.1061555769957,
+          "net_percent": -5.251061555769956,
+          "performance_alerts": [
+            {
+              "action": "FROZEN_INPUT_LEDGER_STATE_REVIEW",
+              "kind": "performance_alert",
+              "t": 1612137600000
+            }
+          ],
+          "position_time_fraction": 0.08593995908089393,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3460,
+          "slippage": 177.86189999999965,
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1615187700000
+          },
+          "turnover": 55279.3368
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        1,
+        2
+      ],
+      "start_ms": 1610323200000
+    }
+  ],
+  "validation_failures": [
+    {
+      "at": "2026-10-15T22:48:46.120022+00:00",
+      "command_sha256": "4c8453310b4e807ee6f2b384a71584d0698d3919960dad7375e3d5b1cfc0b36c",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "fee-pressure-new-synthetic-regression",
+      "retry_of": null
+    }
+  ]
+}

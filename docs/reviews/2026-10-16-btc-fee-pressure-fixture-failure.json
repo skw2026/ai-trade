@@ -1,0 +1,25 @@
+{
+  "failure_id": "76081f90359642198a44965696fc45d4",
+  "decision": "retry",
+  "goal": "Validate the new fee-pressure feature, selection and accounting boundaries before any economic run",
+  "expected": "All 34 synthetic cases pass, including reused execution and independent Decimal ledger",
+  "observed": "33 passed; test_reused_execution_decimal_identity raised ValueError while unpacking fixture(), before simulation",
+  "root_cause_status": "confirmed",
+  "root_cause": "The existing test_btc_old_output_model.fixture returns only rows and features; the new test mistakenly expected start and end as two additional return values. The existing START and six-day default define those boundaries explicitly.",
+  "evidence": [
+    "tools/test_btc_old_output_model.py:12 fixture returns rows,fs",
+    ".artifacts/btc-fee-pressure-20261016/test-fee-before-fixture-fix.py SHA256 6d6bfead80830304af1ea45ab83f35dc875301cfe49d94b9fb922d489a9f5ccf",
+    ".artifacts/btc-fee-pressure-20261016/validation-state.json"
+  ],
+  "next_action": "Unpack the two actual values and use the original START plus six days; retry the identical test command once. Do not change market code, input, costs, risk, or assertions.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The test still requires the same independent cash, fees, funding and risk reconciliation before spending the economic attempt.",
+    "data_feasibility": "The original synthetic fixture is local and has a prewarm bar plus six complete days; no market data request or return calculation has started.",
+    "method_feasibility": "Correcting the call contract preserves the existing execution component and Decimal audit, not a reduced assertion or skipped case.",
+    "budget_and_exit": "One identical-command retry within the original eight-hour batch; a new failure blocks dependent input admission and market execution. No additional vectors or economic attempt."
+  }
+}
