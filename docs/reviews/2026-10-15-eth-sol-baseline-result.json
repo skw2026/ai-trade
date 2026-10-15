@@ -1,0 +1,99 @@
+{
+  "account_requests": 0,
+  "arms": {
+    "base": {
+      "adverse_execution_cost": "3.1638",
+      "completed_episodes": 3,
+      "fees": "8.187516865",
+      "fills": 15,
+      "first_fill_minute": 66241,
+      "funding_paid": "-1.005646272130",
+      "gross_price_pnl": "-7.0883",
+      "last_fill_minute": 69602,
+      "net_pnl": "-17.433970592870",
+      "partial_exit_fills": 3,
+      "reference_drawdown": 0.005093693028323769,
+      "reference_net_return": -0.001743397059287,
+      "stop": "SAFETY_WITHDRAWAL",
+      "terminal_positions": [
+        0.0,
+        0.0
+      ]
+    },
+    "stress": {
+      "adverse_execution_cost": "8.6983",
+      "completed_episodes": 3,
+      "fees": "16.37535504",
+      "fills": 15,
+      "first_fill_minute": 66241,
+      "funding_paid": "-1.005646272130",
+      "gross_price_pnl": "-7.0883",
+      "last_fill_minute": 69602,
+      "net_pnl": "-31.156308767870",
+      "partial_exit_fills": 3,
+      "reference_drawdown": 0.005851808857860058,
+      "reference_net_return": -0.003115630876787,
+      "stop": "SAFETY_WITHDRAWAL",
+      "terminal_positions": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "audit_sha256": "7518c66a2907db9354581b599590b66db341d231f8419757a420a1d4d88d444a",
+  "baseline": "REJECTED_BY_ORIGINAL_SAFETY",
+  "budget": {
+    "active_engineering_days_used": 2,
+    "charged_through_utc": "2026-10-15T03:14:49Z",
+    "engineering_hours_charged_upper_bound": 2.75,
+    "maximum_days": 5,
+    "maximum_hours": 32
+  },
+  "candidate_count": 0,
+  "confirmation_attempts": 0,
+  "demo_unlock": false,
+  "development_comparisons": 0,
+  "fit_diagnostics": {
+    "daily_fits": 49,
+    "eligible_fits": 3,
+    "first_eligible_minute": 66240,
+    "ineligible_beta": 46
+  },
+  "fixed_baseline_vectors": 1,
+  "formation_minutes_evaluated": 69603,
+  "formation_minutes_requested": 131040,
+  "forward_scheduled": false,
+  "g0": "DEVELOPMENT_INPUT_AND_CONTRACT_PASSED",
+  "g1": "REFERENCE_EXECUTION_AND_INDEPENDENT_ACCOUNTING_PASSED_NOT_ACTUAL_FILL_CERTIFICATION",
+  "g2": "NOT_STARTED",
+  "g3": "NOT_STARTED",
+  "g4": "NOT_ACHIEVED",
+  "input": {
+    "funding_per_symbol": 1098,
+    "known_recovered_responses": 1,
+    "minutes_per_symbol": 527100,
+    "new_pages": 1113,
+    "new_wire_bytes": 70582911,
+    "public_request_attempts": 1116,
+    "reused_eth_pages": 1422,
+    "warmup_hours_per_symbol": 1440
+  },
+  "learned_vectors": 0,
+  "orders": 0,
+  "original_safety_and_costs_unchanged": true,
+  "protected_files": 5656,
+  "reason": "REJECT_RISK_OR_SAFETY",
+  "reference_not_actual_pnl": true,
+  "result_sha256": "eecd373ef1b1560e681ac2aad8c3e0cfaee0952a83e427a3d5b3b4a83bec6a75",
+  "status": "CLOSED_NO_GO",
+  "stop_utc": "2024-02-18T08:00:00+00:00",
+  "summary_source_sha256": "6c8d0853bfa9bc954dfbd92e0e9fca559e21a9c5d4377b8fa024adc8b83b4ffc",
+  "used_prefix_only": true,
+  "validation": {
+    "exact_compiler_retry_count": 1,
+    "final_distinct_tests": 51,
+    "full_ctest_rerun": false,
+    "input_compiler_failures": 1,
+    "skipped": 0
+  }
+}

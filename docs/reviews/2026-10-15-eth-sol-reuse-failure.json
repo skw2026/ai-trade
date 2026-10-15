@@ -1,0 +1,29 @@
+{
+  "failure_id": "87ecc721c1a746b8a36f6bfd8eb2f3f2",
+  "decision": "retry",
+  "goal": "Compile the already collected fixed ETH SOL archive before the only baseline attempt",
+  "expected": "All reused and new pages retain original identity, hash, full grid and valid interpretation",
+  "observed": "Compiler rejected old ETH page index 786 with REUSED_OR_NEW_PAGE_NOT_VALID; no economics started and no compiled output was produced",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new reuse adapter read raw record status FAILED from the historically repaired HEADER_FIELD event, bypassing the existing effective_record resolver. The original failure is intentionally immutable; its previously approved hash-bound corrected interpretation is VALID. Diagnostic revalidation of the exact retained wire proves HTTP200, retCode0, 1000 exact rows without any new request.",
+  "evidence": [
+    ".artifacts/eth-sol-program-20261015/validation-state.json",
+    ".artifacts/aave-market-recovery-20261013/attempts/0000/record.json",
+    ".artifacts/aave-market-recovery-20261013/attempts/0000/corrected-interpretation.json",
+    "docs/reviews/2026-10-13-aave-header-token-failure.json",
+    "tools/aave_market_recovery.py effective_record validates the original record, correction manifest and approved historical review",
+    "Wire SHA256 d877a5cdeb08ef10bdc8d25b4f87e5cde545c751cc4ed1662289962d90c0bc97 remains unchanged"
+  ],
+  "next_action": "Reuse the existing validated resolver only for the immutable recovered ETH archive; add rejecting and accepting adapter tests, retain original new-source bytes, bind this narrow source correction to the same gate review, and perform one exact compiler-command retry with full synthetic regressions embedded",
+  "correction_manifest_sha256": "f15fbf3370cd283cbecb46718d83f2b7a421ebcef4195c044c9d18c1d8a48bf5",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Reuse verified ETH input without laundering historical FAIL, changing strategy or reading economic returns",
+    "data_feasibility": "All1113 new pages collected and response-bound; only one old raw record carries this known corrected interpretation, exact original1000-row payload independently validates",
+    "method_feasibility": "Existing resolver verifies reviewed correction and old source identities; fresh pages and unbound annotations still reject. No generic ignore-failure path is added",
+    "budget_and_exit": "Zero new public requests, one same-command retry within G0 04:29:49UTC deadline and total32h; a second failure blocks dependent work and requires route reassessment"
+  }
+}
