@@ -1,0 +1,161 @@
+{
+  "account_operations": 0,
+  "background_waits": 0,
+  "baseline_commit": "5dc647c9a343b793c79ca46183baa125ebe6c6f6",
+  "current_runtime_health": "NOT_CHECKED",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "economic_verdict": "NO_NEW_MARKET_EXPERIMENT_OLD_RESULTS_UNCHANGED",
+  "engineering_verdict": "DIAGNOSTIC_REPRODUCED_NOT_FIXED",
+  "evidence_sha256": {
+    "native_diagnostic": "2286e277cfd10d96f6fb39e41b9cec7ef6c5ee057eabaedf72925b9f8c012908",
+    "review_freeze": "b40480ba3f33f736ea89dab3a66780e857443a119040d4ba905e80f9ac6b57ea"
+  },
+  "existing_boundary_tests": 9,
+  "external_document_operations": 7,
+  "findings": [
+    {
+      "files": [
+        "src/app/bot_app.cpp",
+        "tools/execution_net_learning.py",
+        "tools/btc_old_output_model.py"
+      ],
+      "finding": "REFERENCE_AND_RUNTIME_EXECUTION_NOT_IDENTICAL",
+      "id": "F1",
+      "level": "CONFIRMED"
+    },
+    {
+      "files": [
+        "src/evolution/self_evolution_controller.cpp",
+        "src/evolution/self_evolution_controller.h"
+      ],
+      "finding": "VIRTUAL_ATTRIBUTION_NOT_EXECUTED_POSITION_LEDGER",
+      "id": "F2",
+      "level": "CONFIRMED",
+      "production_impact": "UNKNOWN"
+    },
+    {
+      "excludes": [
+        "canary_independent_signal",
+        "microstructure_demo_target"
+      ],
+      "files": [
+        "src/app/bot_app.cpp"
+      ],
+      "finding": "BASELINE_EDGE_HEURISTIC_NOT_CALIBRATED_EXPECTATION",
+      "id": "F3",
+      "level": "DESIGN_LIMITATION"
+    },
+    {
+      "files": [
+        "src/evolution/self_evolution_controller.h",
+        "config/bybit.demo.s5.yaml"
+      ],
+      "finding": "BOUNDED_TWO_SIGNAL_ALLOCATION_NOT_AUTONOMOUS_ALPHA_DISCOVERY",
+      "id": "F4",
+      "level": "DESIGN_LIMITATION"
+    },
+    {
+      "files": [
+        "src/evolution/self_evolution_controller.cpp",
+        "docs/RESEARCH_PRODUCT_POLICY.md"
+      ],
+      "finding": "LOCAL_UPDATE_STATISTICS_NOT_INDEPENDENT_PROFIT_PROOF",
+      "id": "F5",
+      "level": "DESIGN_LIMITATION"
+    },
+    {
+      "files": [
+        "tools/btc_old_output_model.py",
+        "docs/reviews/2026-10-15-btc-old-output-comparison-result.json"
+      ],
+      "finding": "LATEST_BTC_NEGATIVE_RESULT_NOT_CAUSED_BY_CPP_PROXY",
+      "id": "F6",
+      "level": "CONFIRMED"
+    }
+  ],
+  "full_ctest_run": false,
+  "g4": false,
+  "legacy_protected_files": 5775,
+  "native_cases": 5,
+  "native_diagnostic": {
+    "accounts": 0,
+    "binary_sha256": "10504b200b98df2ecd083d7856463e76edc591292599c8d48cd203f9cbf99bad",
+    "cases": [
+      {
+        "case": "same_bucket_positive_control",
+        "comparator": 0.6,
+        "comparator_kind": "hypothetical_prior_60_notional_gross",
+        "diagnostic_assertion": "PASS",
+        "native_virtual": 0.6000000000000005
+      },
+      {
+        "case": "bucket_switch_flat_price",
+        "comparator": -0.02,
+        "comparator_kind": "hypothetical_60_to_40_switch_cost_at_10bps",
+        "diagnostic_assertion": "PASS",
+        "native_virtual": 0
+      },
+      {
+        "case": "bucket_switch_return",
+        "comparator": 0.6,
+        "comparator_kind": "hypothetical_prior_60_notional_gross",
+        "diagnostic_assertion": "PASS",
+        "native_virtual": 0.40000000000000036
+      },
+      {
+        "case": "filtered_no_fill",
+        "comparator": 0,
+        "comparator_kind": "supplied_realized_net_zero_not_exchange_receipt",
+        "diagnostic_assertion": "PASS",
+        "native_virtual": 0.6000000000000005
+      },
+      {
+        "case": "first_signal_entry",
+        "comparator": -0.06,
+        "comparator_kind": "hypothetical_empty_to_60_entry_cost_at_10bps",
+        "diagnostic_assertion": "PASS",
+        "native_virtual": 0
+      }
+    ],
+    "market_experiments": 0,
+    "probe_sha256": "a40f44c0ed7fd48e787fb3d121c6fa0eda6cf91a3e6acf6957aa531467e559b6",
+    "production_changes": 0,
+    "source_sha256": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+    "status": "CURRENT_BEHAVIOUR_REPRODUCED_NOT_FIXED"
+  },
+  "new_backtests": 0,
+  "new_market_data_requests": 0,
+  "new_mechanism_proposals": 0,
+  "new_training_runs": 0,
+  "next_proposal": {
+    "account_operations": 0,
+    "deployments": 0,
+    "engineering_hour_cap": 8,
+    "market_experiments": 0,
+    "outcome": "SHARED_EXECUTION_REWARD_SEMANTICS_SYNTHETIC_PROOF",
+    "status": "PROPOSED_NOT_STARTED"
+  },
+  "prior_btc_costs": {
+    "fees": 90.29077420000002,
+    "funding": 17.555915950286607,
+    "gross": -604.2834000000003,
+    "slippage": 86.0837999999992
+  },
+  "prior_btc_decision": "NO_GO_RISK",
+  "production_changes": 0,
+  "protected_files": 6001,
+  "qualified_candidates": 0,
+  "skipped_tests": 0,
+  "source_sha256": {
+    "config/bybit.demo.s5.yaml": "62b3370f452698758669e1ae18f6df6d8dfa9cabe70077d41ef2914e9f5d68d2",
+    "docs/RESEARCH_PRODUCT_POLICY.md": "e7691b924eaae90aacca7eba3947bf1deda2ee7798a45dc43feb8df94f3a54ac",
+    "docs/reviews/2026-10-15-btc-old-output-comparison-result.json": "3376dbe63b3623616d027371abfe6ab7c8a89b0cea9d8f6590aed49e8f6a6baa",
+    "src/app/bot_app.cpp": "24d2c2286eda9075b7f2c20c3d459500b2d79f8d09dff1d3ac7f40d0e2f9b547",
+    "src/evolution/self_evolution_controller.cpp": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+    "src/evolution/self_evolution_controller.h": "344a5ccec11366f27e1036be05cb104c8cf7047ec2226c1b81f5b50261514abf",
+    "tools/btc_old_output_model.py": "277632c0d6971d5893ca44569cad60de0d5d349e2de1c0630a6413baee8ae760",
+    "tools/execution_net_learning.py": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d"
+  },
+  "status": "REVIEW_COMPLETE_ACTION_REQUIRED"
+}
