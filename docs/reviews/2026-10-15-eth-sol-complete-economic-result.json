@@ -1,0 +1,674 @@
+{
+  "account_operations": 0,
+  "actual_fills_verified": false,
+  "all_history_development_only": true,
+  "arms": {
+    "baseline": {
+      "books": {
+        "base": {
+          "average_gross_over_calendar_usdt": 116.12186253756909,
+          "evaluation": {
+            "active_weeks": 0,
+            "episodes": 0,
+            "full_net": -614.5792533512904,
+            "max_episode_positive_share": null,
+            "max_week_positive_share": null,
+            "net": 0,
+            "quarter_net": [
+              0,
+              0,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": 0,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 3,
+          "fees_usdt": 56.506682815000005,
+          "fills": 87,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 18,
+          "gross_usdt": -535.3961,
+          "insufficient": null,
+          "last_flat_utc": "2024-03-18T10:03:00+00:00",
+          "maximum_reference_drawdown": 0.06459977961413041,
+          "net_fraction_initial": -0.06145792533512904,
+          "net_usdt": -614.5792533512904,
+          "position_minutes": 24606,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": 1.0110705362849992,
+          "slippage_usdt": 21.6654,
+          "stop": "PEER_PATH_REJECTED"
+        },
+        "stress": {
+          "average_gross_over_calendar_usdt": 116.12186253756909,
+          "evaluation": {
+            "active_weeks": 0,
+            "episodes": 0,
+            "full_net": -778.9349975062869,
+            "max_episode_positive_share": null,
+            "max_week_positive_share": null,
+            "net": 0,
+            "quarter_net": [
+              0,
+              0,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": 0,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 3,
+          "fees_usdt": 113.01162696999998,
+          "fills": 87,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 18,
+          "gross_usdt": -535.3961,
+          "insufficient": null,
+          "last_flat_utc": "2024-03-18T10:03:00+00:00",
+          "maximum_reference_drawdown": 0.08023078634177742,
+          "net_fraction_initial": -0.07789349975062869,
+          "net_usdt": -778.9349975062869,
+          "position_minutes": 24606,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": 1.0110705362849992,
+          "slippage_usdt": 129.5162,
+          "stop": "RESEARCH_DRAWDOWN_8_PERCENT"
+        }
+      },
+      "calendar_minutes": 527040,
+      "extra_delay_minutes": 0,
+      "parameters": [
+        2,
+        24
+      ],
+      "stop_utc": "2024-03-18T10:01:00+00:00"
+    },
+    "candidate": {
+      "books": {
+        "base": {
+          "average_gross_over_calendar_usdt": 418.29037105741276,
+          "evaluation": {
+            "active_weeks": 8,
+            "episodes": 19,
+            "full_net": -396.88909782543124,
+            "max_episode_positive_share": 0.4605108032271726,
+            "max_week_positive_share": 0.40690909117546703,
+            "net": -234.22418133366045,
+            "quarter_net": [
+              -170.99980820343444,
+              -63.22437313022601,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": -259.37651507409464,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              18.232364368803246,
+              -70.61522011199486,
+              -69.64292859981651,
+              6.150288876038758,
+              25.152333740434187,
+              12.278165598203486,
+              -92.55481207510275,
+              0,
+              0,
+              0,
+              -63.22437313022601,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 7,
+          "fees_usdt": 96.42255056500004,
+          "fills": 165,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 31,
+          "gross_usdt": -265.3556,
+          "insufficient": null,
+          "last_flat_utc": "2024-07-21T20:29:00+00:00",
+          "maximum_reference_drawdown": 0.052687529236900066,
+          "net_fraction_initial": -0.03968890978254312,
+          "net_usdt": -396.88909782543124,
+          "position_minutes": 88177,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": -2.083152739568999,
+          "slippage_usdt": 37.1941,
+          "stop": "PEER_PATH_REJECTED"
+        },
+        "stress": {
+          "average_gross_over_calendar_usdt": 418.29037105741276,
+          "evaluation": {
+            "active_weeks": 8,
+            "episodes": 19,
+            "full_net": -780.305881930446,
+            "max_episode_positive_share": 0.5398051191968651,
+            "max_week_positive_share": 0.8231883632993471,
+            "net": -385.11840940366346,
+            "quarter_net": [
+              -307.1683231834395,
+              -77.95008622022397,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": -392.70531258909614,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              1.62958179380621,
+              -92.88191786199968,
+              -104.80699721481324,
+              -10.007269063960848,
+              7.586903185432675,
+              -0.4156484968007135,
+              -108.2729755251039,
+              0,
+              0,
+              0,
+              -77.95008622022397,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 7,
+          "fees_usdt": 192.88813466999994,
+          "fills": 165,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 31,
+          "gross_usdt": -265.3556,
+          "insufficient": null,
+          "last_flat_utc": "2024-07-21T20:29:00+00:00",
+          "maximum_reference_drawdown": 0.08109250896798409,
+          "net_fraction_initial": -0.0780305881930446,
+          "net_usdt": -780.305881930446,
+          "position_minutes": 88177,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": -2.083152739568999,
+          "slippage_usdt": 324.1453,
+          "stop": "RESEARCH_DRAWDOWN_8_PERCENT"
+        }
+      },
+      "calendar_minutes": 527040,
+      "extra_delay_minutes": 0,
+      "parameters": [
+        1.5,
+        48
+      ],
+      "stop_utc": "2024-07-21T20:27:00+00:00"
+    },
+    "latency": {
+      "books": {
+        "base": {
+          "average_gross_over_calendar_usdt": 423.57187229603096,
+          "evaluation": {
+            "active_weeks": 9,
+            "episodes": 20,
+            "full_net": -494.9625539170793,
+            "max_episode_positive_share": 0.4842960884316166,
+            "max_week_positive_share": 0.37725946170490277,
+            "net": -229.36514157892816,
+            "quarter_net": [
+              -154.28475840368083,
+              -75.08038317524733,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": -253.63035776773359,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              24.265216188805425,
+              -72.91600641699551,
+              -58.93182604980939,
+              6.2427642960356025,
+              22.033386530434655,
+              11.778335078202872,
+              -86.75662803035448,
+              0,
+              0,
+              0,
+              -65.17148511022606,
+              -9.908898065021276,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 4,
+          "fees_usdt": 93.18579116000005,
+          "fills": 150,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 32,
+          "gross_usdt": -367.9099,
+          "insufficient": null,
+          "last_flat_utc": "2024-07-22T14:49:00+00:00",
+          "maximum_reference_drawdown": 0.0533861768905845,
+          "net_fraction_initial": -0.049496255391707926,
+          "net_usdt": -494.9625539170793,
+          "position_minutes": 89260,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": -2.027037242917999,
+          "slippage_usdt": 35.8939,
+          "stop": "PEER_PATH_REJECTED"
+        },
+        "stress": {
+          "average_gross_over_calendar_usdt": 423.57187229603096,
+          "evaluation": {
+            "active_weeks": 9,
+            "episodes": 20,
+            "full_net": -767.0226797070845,
+            "max_episode_positive_share": 0.5626896147858303,
+            "max_week_positive_share": 0.5621316055809963,
+            "net": -357.5480153839271,
+            "quarter_net": [
+              -267.4281684386806,
+              -90.11984694524654,
+              0
+            ],
+            "sharpe": {
+              "hac7": null,
+              "naive": null,
+              "reason": "STOPPED_OR_TOO_SHORT"
+            },
+            "stress_net_without_best_week": -365.3658281593616,
+            "tail_net": 0,
+            "weekly": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              3.9785806038053124,
+              -90.0640355319938,
+              -82.75128000481163,
+              -8.823955203963123,
+              7.817812775434504,
+              2.11104875320234,
+              -99.69633983035419,
+              0,
+              0,
+              0,
+              -70.14138334022573,
+              -19.978463605020806,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "failed_entries": 4,
+          "fees_usdt": 186.36741695000003,
+          "fills": 150,
+          "first_two_negative_windows_utc": "2024-02-18T08:00:00+00:00",
+          "full_completed_episodes": 32,
+          "gross_usdt": -367.9099,
+          "insufficient": null,
+          "last_flat_utc": "2024-07-22T14:49:00+00:00",
+          "maximum_reference_drawdown": 0.08004057159611751,
+          "net_fraction_initial": -0.07670226797070845,
+          "net_usdt": -767.0226797070845,
+          "position_minutes": 89260,
+          "positions": [
+            0,
+            0
+          ],
+          "signed_funding_cost_usdt": -2.027037242917999,
+          "slippage_usdt": 214.7724,
+          "stop": "RESEARCH_DRAWDOWN_8_PERCENT"
+        }
+      },
+      "calendar_minutes": 527040,
+      "extra_delay_minutes": 1,
+      "parameters": [
+        1.5,
+        48
+      ],
+      "stop_utc": "2024-07-22T14:46:00+00:00"
+    }
+  },
+  "budget": {
+    "active_engineering_days": 1,
+    "charged_through_utc": "2026-10-15T06:44:36+00:00",
+    "design_reserved_hours": 2,
+    "execution_charged_hours": 1,
+    "total_cap_hours": 20
+  },
+  "candidate_count": 0,
+  "compute_seconds": 104.72672799997963,
+  "confirmation_planning": {
+    "observation_started": false,
+    "status": "NOT_JUSTIFIED_BY_DEVELOPMENT"
+  },
+  "continuation_pairs": 2,
+  "demo_new_positions_allowed": false,
+  "deployments": 0,
+  "evidence": {
+    "independent_audit_sha256": "557b33eb8a2a9c7065520029465659c391a8b50c1429fdfeb8e3342be2a9e06a",
+    "market_result_sha256": "ac2d739e03f6fef900d1823c18b6a2efd3aa9e6402b406d3bb9b633239e000cf",
+    "model_freeze_sha256": "4ba40dbc1c7dd648562d34fa6d002d6729de6b3d628547d4dc26f88c931731cf"
+  },
+  "experiment": "ETH_SOL_2024_COMPLETE_DEVELOPMENT",
+  "g4": "NOT_ACHIEVED",
+  "independent_books": 24,
+  "independent_confirmation_attempts": 0,
+  "latency_pairs": 1,
+  "market_batches": 1,
+  "model_regressions_at_freeze": 93,
+  "model_test_skips": 0,
+  "new_market_requests": 0,
+  "observation_started": false,
+  "online_hyperparameter_updates": 0,
+  "protected_files": 5698,
+  "q1_grid": [
+    {
+      "base_net_usdt": -614.5792533512904,
+      "eligible": false,
+      "index": 0,
+      "parameters": [
+        2,
+        24
+      ],
+      "stress_net_usdt": -778.9349975062869
+    },
+    {
+      "base_net_usdt": -357.639639711364,
+      "eligible": false,
+      "index": 1,
+      "parameters": [
+        1.5,
+        12
+      ],
+      "stress_net_usdt": -791.1207151813796
+    },
+    {
+      "base_net_usdt": -200.39868134714197,
+      "eligible": true,
+      "index": 2,
+      "parameters": [
+        1.5,
+        24
+      ],
+      "stress_net_usdt": -539.3296532171389
+    },
+    {
+      "base_net_usdt": -162.66491649177078,
+      "eligible": true,
+      "index": 3,
+      "parameters": [
+        1.5,
+        48
+      ],
+      "stress_net_usdt": -395.1874725267826
+    },
+    {
+      "base_net_usdt": -552.4669165709802,
+      "eligible": false,
+      "index": 4,
+      "parameters": [
+        2,
+        12
+      ],
+      "stress_net_usdt": -790.3659230959929
+    },
+    {
+      "base_net_usdt": -387.0445383496608,
+      "eligible": true,
+      "index": 5,
+      "parameters": [
+        2,
+        48
+      ],
+      "stress_net_usdt": -474.2314970296702
+    },
+    {
+      "base_net_usdt": -413.82984588482213,
+      "eligible": true,
+      "index": 6,
+      "parameters": [
+        2.5,
+        12
+      ],
+      "stress_net_usdt": -651.6891508348472
+    },
+    {
+      "base_net_usdt": -343.38603362337017,
+      "eligible": true,
+      "index": 7,
+      "parameters": [
+        2.5,
+        24
+      ],
+      "stress_net_usdt": -452.4704806483751
+    },
+    {
+      "base_net_usdt": -346.8898954233846,
+      "eligible": true,
+      "index": 8,
+      "parameters": [
+        2.5,
+        48
+      ],
+      "stress_net_usdt": -409.87384088338877
+    }
+  ],
+  "q1_vector_pairs": 9,
+  "reason": "NO_GO_RISK",
+  "schema": "complete_development_economic_result_v1",
+  "selected_index": 3,
+  "selected_parameters": [
+    1.5,
+    48
+  ],
+  "status": "CLOSED_NO_GO",
+  "technical_failures": 2,
+  "technical_failures_repaired_without_market_rerun": true
+}

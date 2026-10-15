@@ -1,0 +1,25 @@
+{
+  "failure_id": "2061466ee08f4f759b74f5292e7d8bbd",
+  "decision": "retry",
+  "goal": "Verify the accepted new development checkpoint preserves full state across the Q1 boundary",
+  "expected": "78 relevant synthetic tests pass, including exact snapshot equality after JSON save/restore and continuation",
+  "observed": "77 pass; checkpoint test fails comparing root.model and root.models.0.model tuple versus JSON-restored list",
+  "root_cause_status": "confirmed",
+  "root_cause": "Simulation.snapshot emitted native tuples for model coefficients instead of canonical JSON lists. JSON round-trip changes the Python representation, even though economic result and canonical JSON contents are identical.",
+  "evidence": [
+    ".artifacts/eth-sol-complete-20261015/validation-state.json",
+    ".artifacts/eth-sol-complete-20261015/checkpoint-model-before-fix.py",
+    "Synthetic diagnostic reported only two tuple/list type differences, json_semantics_equal=true and result_equal=true; no market files or economic attempt were used"
+  ],
+  "next_action": "Canonicalize snapshot model, model-history, hourly window and queue containers to JSON lists; keep test assertion, coefficients, selection, risk and costs unchanged; retry the identical full test command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Exact resumable continuous account state is required by the approved experiment; fixing representation does not optimize market returns",
+    "data_feasibility": "Existing complete raw/compiled data mapping already verified; this failure used only synthetic fixtures",
+    "method_feasibility": "The diagnostic isolates serialization representation, with identical economic output and canonical JSON; normalizing the producer satisfies the existing equality requirement",
+    "budget_and_exit": "One original-command retry within the six-hour implementation allowance; repeat failure stops dependent execution and triggers route reassessment; zero market attempts consumed"
+  }
+}

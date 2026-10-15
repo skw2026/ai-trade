@@ -1,0 +1,25 @@
+{
+  "failure_id": "6f9233ab96d140c8885a29b507653a26",
+  "decision": "retry",
+  "goal": "Independently verify funding and an actual hard-risk event before the accepted market batch",
+  "expected": "85 synthetic tests pass, including independent reconstruction of a hard stop",
+  "observed": "84 tests pass. The joint 100-to-180 synthetic price shock does not stop either book; independent audit itself agrees",
+  "root_cause_status": "confirmed",
+  "root_cause": "Fixture assumed an 80% joint asset rise necessarily breaches risk. The actual hedge is long 11.36 ETH and short 13.6 SOL, leaving base/stress drawdown 1.871872%/1.924287% and short-leg cushion 11.002784%/10.950024%, above the unchanged 8% distance threshold.",
+  "evidence": [
+    ".artifacts/eth-sol-complete-20261015/validation-state.json",
+    "Synthetic read-only diagnostic at minute 12: both stop=None; quantities [11.36,-13.6]; base collateral [1136.2272,1359.728], leg_cash [-1137.98812496,1357.6201496]",
+    "Initial diagnostic-only import named test_eth_sol_model instead of test_eth_sol_baseline; corrected module reference, no production edit or market read"
+  ],
+  "next_action": "Change only synthetic joint shock from 180 to 200, which exhausts the short-leg cushion. Keep engine, auditor, risk limits and stop assertion unchanged; retry identical 85-test command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "A demonstrably binding hard-risk negative control protects economic validity; this is not tuning market outcomes",
+    "data_feasibility": "The synthetic case is fully known; existing real input verification passed and zero market attempts are consumed",
+    "method_feasibility": "Independent risk arithmetic explains non-breach at 180; at 200 short-leg collateral plus cash minus liability is negative, so unchanged rules must stop",
+    "budget_and_exit": "One identical-command retry inside the six-hour implementation allowance; repeat failure stops dependent work for route reassessment"
+  }
+}
