@@ -11,6 +11,19 @@
 
 ## 开始与阶段边界
 
+- 2026-10-16 用户接续信息诊断要求继续，已按fee-component-diagnosis固定计划
+  完成COMPONENT_DIAGNOSIS_COMPLETE：只读两套冻结费用24h模型/535预测，两次
+  输入投影、0新收益拟合/交易路径。误差改善约95.56%至101.84%来自价格
+  线性空间外残差，不是主要靠岭调权；但2025两半年各剔一个固定28日块后
+  总改善转负，噪声未排除。残差幅度均值4.02/10.33/10.08bps，15/30bps
+  仅费用参考尺度，COST_HEADROOM_NOT_ESTABLISHED，不是盈亏资格或因果。
+  16新+141旧=157无skip、535行及聚合Decimal核对，正式失败0；6356旧绑定
+  和六草稿保持。见同日期fee-component-diagnosis-result。main skip-ci核SHA，
+  0新数据/账户/ECS/等待。旧经济否决/G4未达成/候选0/Demo锁不变。
+  本诊断收口，不直接换24h持有期或复杂模型、不自动继续拆块/扩样本。
+  新完整经济范围须机制、成本敏感固定政策/对照、净账风险和可达独立出口
+  同时明确，尚未启动；普通继续不能重开旧族或自动续模型/研究预算。
+
 - 2026-10-16 用户要求及时调整、提升实验解释能力，已按information-attribution
   固定计划完成METHOD_DIAGNOSTIC_COMPLETE。新研究补充遵循
   `docs/RESEARCH_EXPLANATION_PROTOCOL.md`：信息与交易/风险分层、同日期嵌套
