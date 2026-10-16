@@ -1,0 +1,1105 @@
+{
+  "account_operations": 0,
+  "background_wait": false,
+  "checked_utc": "2026-10-16T07:43:51.026224+00:00",
+  "completion_blocked_decisions": 47,
+  "completion_ready_decisions": 306,
+  "deadline": "2026-10-16T15:28:29+00:00",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "direct_input_gets": 2,
+  "document_operations": 23,
+  "evaluation": {},
+  "evidence_sha256": {
+    ".artifacts/data-first-mechanisms-20261016/address-input.json": "8996812146de45f23e8127c85b23935519b66aa00fe8a812857aa5a36571a36e",
+    ".artifacts/data-first-mechanisms-20261016/closeout.py": "6dcfd12ef1e98ecdc5bb62348a1b23465cec4a90346f64d2272c52b474111590",
+    ".artifacts/data-first-mechanisms-20261016/economic-attempt.json": "1f0dd65400456c53da54a45729e995014c13d5c81591c504fd686f99f92fc046",
+    ".artifacts/data-first-mechanisms-20261016/final-tests.json": "a771af711ac33483346e6b63c6a79185b390e4fad7770f249666d0d0bf13afaf",
+    ".artifacts/data-first-mechanisms-20261016/final-tests.log": "36942dd3f81c8ceae5f486678b9aa11e7388385fb5b5a806189d1e18b06bd2fd",
+    ".artifacts/data-first-mechanisms-20261016/freeze.json": "fb4375fc1d8ddafae019234fde97a2e4505aadcf2adfdcb6a7dc6d4a0d30159c",
+    ".artifacts/data-first-mechanisms-20261016/get-01.attempt": "92bc723b9cffb5a9ae79ee862fc25ea0ad72e4ac81fb21b8e4cb4eafd2d7c257",
+    ".artifacts/data-first-mechanisms-20261016/get-01.body": "75497a71f08f60d6d2a3b45668a69fe244ea7ad91f2cc995cba0c3418e93f670",
+    ".artifacts/data-first-mechanisms-20261016/get-01.headers": "50635f0953aac584fafe70cf101622becd08cc167b0a09e358665ea41124466c",
+    ".artifacts/data-first-mechanisms-20261016/get-01.json": "d5fe51c53c24c0fc2e3602f5747ca0a566090dadd29b3c41d10d19e65ae947d3",
+    ".artifacts/data-first-mechanisms-20261016/get-02.attempt": "924db5afb6a96321f794126550b0ce45d5012855257a296ac3465bef8fbf9474",
+    ".artifacts/data-first-mechanisms-20261016/get-02.body": "06495ff8e643432e6948b7b4686ce44fc106217287dabdc1b38351d9ddec46c3",
+    ".artifacts/data-first-mechanisms-20261016/get-02.headers": "b12580b828155b1be08d6ec8fadeae3cfd9ddb7dc36a37e747682387ec6b18b3",
+    ".artifacts/data-first-mechanisms-20261016/get-02.json": "ecb00e59e9b4e257568af1f0f99ee750ff5b699d7366d5cd2c2e46015ef63352",
+    ".artifacts/data-first-mechanisms-20261016/input-audit.json": "fdd7aecdc9cbce9caab190b97e8219786bdc7b9913945a44b6d16462b30c369f",
+    ".artifacts/data-first-mechanisms-20261016/log-addresses.json": "b3465641655ce25588c7f5b075b73b7eeda4aff1879e10c0abe9e553b86833fa",
+    ".artifacts/data-first-mechanisms-20261016/model-freeze.json": "b7bffd3fcc6e99e7d43a9b6fffffe3cf317a7ccea4d8b488de89d38c6b557367",
+    ".artifacts/data-first-mechanisms-20261016/model-input.json": "195e84043e756f26bbdff6f49ff253fadb140deb1a3183bf9e18f0f7045eedc8",
+    ".artifacts/data-first-mechanisms-20261016/pre-economic-tests.json": "a771af711ac33483346e6b63c6a79185b390e4fad7770f249666d0d0bf13afaf",
+    ".artifacts/data-first-mechanisms-20261016/pre-economic-tests.log": "fda2cb8454c1be2b262e0ef6225bca575fe9947d1d89e5191195e66262f3ec5e",
+    ".artifacts/data-first-mechanisms-20261016/regression.py": "a75cf5f54e6d0b520ac621ffb4fcc687ec9efb49189d529c3c8b2b7f02f3a880",
+    ".artifacts/data-first-mechanisms-20261016/result.json": "ef7d1b49c5be44a7cc3b9b098288e05047382687458fb4d51c5c0a091ff11bd1",
+    ".artifacts/data-first-mechanisms-20261016/selection-audit.json": "4293cca0c8c317c6944846772c040ccf7aba70ea0a5e59ee98165ca6b8d32e20",
+    ".artifacts/data-first-mechanisms-20261016/selection.json": "2f04387051ff5d825376de4f4e2ed2aeb97159a7a17505960ee71f5240985378",
+    ".artifacts/data-first-mechanisms-20261016/stage.py": "ee849c113b15932509e60ead970d5d885452bdeab97fbcc57f460cd140be0a5b",
+    ".artifacts/data-first-mechanisms-20261016/train-00-attempt.json": "4beda12d5289cf6b9ec85f5a78868ce77cba10b03327550d20fb102590f15b5e",
+    ".artifacts/data-first-mechanisms-20261016/train-00-audit.json": "9dbdbb06adcf0884c28ed6957861e97bd5edef9831f0e888c089b91ba8518149",
+    ".artifacts/data-first-mechanisms-20261016/train-00.json": "c1da7a5c59a876fe274ab94f6c4c025cad0ea9c2a1cd583584daa08f82a89fd0",
+    ".artifacts/data-first-mechanisms-20261016/train-01-attempt.json": "f0ee272e88d6280478d6e3e26727cc72bc18739f4344fc932c8bf0e6f005c6f3",
+    ".artifacts/data-first-mechanisms-20261016/train-01-audit.json": "552226752071694cf7479bd9e6b3772d17530752c90da3979dd4d0b739ab33b4",
+    ".artifacts/data-first-mechanisms-20261016/train-01.json": "7991d6e9355edc4b7c38ddb24befd0eb42f6567510db63102de4714d9c68cd3c",
+    ".artifacts/data-first-mechanisms-20261016/train-02-attempt.json": "3c2cbeb87b5418b30d87371414161dd83180752579538e649448d5a90086c5b9",
+    ".artifacts/data-first-mechanisms-20261016/train-02-audit.json": "3971dd5280ffaa945a68696f48bef8d6b204835bc8707c0599d1d494e861309f",
+    ".artifacts/data-first-mechanisms-20261016/train-02.json": "f8a8ce498d34d34e885364e94abdaa611c420d907e65852451c6095d7aa94e62",
+    ".artifacts/data-first-mechanisms-20261016/train-03-attempt.json": "e410b3aa4e2e761a40505dde0d56f626fed3265807c7cb68448ed48524320977",
+    ".artifacts/data-first-mechanisms-20261016/train-03-audit.json": "33a2c25981d72bf7014b9494996d75873669d21e1b56bfb9d954cc0b33f89064",
+    ".artifacts/data-first-mechanisms-20261016/train-03.json": "579998a26badf568309a7f64fdb2a6481c2c7dddcc449e9f51843444fc2936e6",
+    ".artifacts/data-first-mechanisms-20261016/train-04-attempt.json": "88eec2d19ec5fb0d558ab41b40323e0d5640a320d3d0c163d3fdf22ee48660d1",
+    ".artifacts/data-first-mechanisms-20261016/train-04-audit.json": "695f4b33bf30b24403dcc6076d826a6b3b2f20939c7a9a3539f0061975ba9abf",
+    ".artifacts/data-first-mechanisms-20261016/train-04.json": "b8399a6f1e4964ac09fa5414fd62bebf45f03143a2802b5f03190b7649c79d4e",
+    ".artifacts/data-first-mechanisms-20261016/train-05-attempt.json": "061abb192d4b503bf308baeba3d254a2a29a8140d1b99965479435a5a2120d36",
+    ".artifacts/data-first-mechanisms-20261016/train-05-audit.json": "6e1278c038545a75d1dfb158640ff37a357c97ed589361699ae885b09869d9e5",
+    ".artifacts/data-first-mechanisms-20261016/train-05.json": "286ebe8b54044d473319b068f2649f5d8e688a7f5418c9e1119e1cca43fad1e5",
+    ".artifacts/data-first-mechanisms-20261016/train-06-attempt.json": "8e891ab53a374682e7644b83d097a21b83c8f25fd604ee26cf055210993896f1",
+    ".artifacts/data-first-mechanisms-20261016/train-06-audit.json": "e7ab6cbf8e40070729571b651e7cf9810925ec119791338d85412ff12ef7eb90",
+    ".artifacts/data-first-mechanisms-20261016/train-06.json": "8b8ff1ef12b5dde5f8d3c1c51c4d32ff3975a86aac9026432f2980824e7473e0",
+    ".artifacts/data-first-mechanisms-20261016/train-07-attempt.json": "67a6abf3cd5da78c2ca3b121991f7f3f341745a3f079b944b424d25037de78e2",
+    ".artifacts/data-first-mechanisms-20261016/train-07-audit.json": "e722ec359cf1d99bb756c15ba7a492666c956013c5c3f7d4292a81c2d43d89da",
+    ".artifacts/data-first-mechanisms-20261016/train-07.json": "b1e694c812c08a60cb47690002c59efd90bf9fc9a280c4cc6f6d2094b2719f7a",
+    ".artifacts/data-first-mechanisms-20261016/train-feature-audit.json": "016b9e78d04c250c9ad769f4d4807b5efa32bae5bdc56de4b53f796744e9cd21",
+    ".artifacts/data-first-mechanisms-20261016/web-01.json": "8b60f31fa43857b65e51fb29c90652f45bf4f0cd70d653641bc911d8b45d5675",
+    ".artifacts/data-first-mechanisms-20261016/web-02.json": "34f80af84c993095927ccef23b24664c84d5a8929eff149a3dd76e32e0abaac2",
+    ".artifacts/data-first-mechanisms-20261016/web-03.json": "678dda4b4b151ed018ab4c6943b6460c1c804f708790ca84fde706a214fe4984",
+    ".artifacts/data-first-mechanisms-20261016/web-04.json": "88d8d408044c94557b73452771f78409a334101502e515b0c166a944219b53fb",
+    ".artifacts/data-first-mechanisms-20261016/web-05.json": "6b44f72ca94003d1c0157d3ffbdf4c2cddf88612b05ea7cb21c6144e4745bc0b",
+    ".artifacts/data-first-mechanisms-20261016/web-06.json": "36f2d22949143cb7abbc5c3c1bb5b3f8af00794c61be0c84f55797e2761f9945"
+  },
+  "formal_validation_failures": [],
+  "g4": false,
+  "independent_confirmation": false,
+  "input": {
+    "commit": "f1a36afb962731c387bb03982758ab0103063da5",
+    "late_eod_completion_days": 87,
+    "metric": "AdrActCnt",
+    "missing_completion_days": 0,
+    "raw_sha256": "06495ff8e643432e6948b7b4686ce44fc106217287dabdc1b38351d9ddec46c3",
+    "required_days": 790,
+    "second_mechanism_status": "MISSING_COLUMN",
+    "total_source_rows": 6351
+  },
+  "input_identity_sha256": {
+    ".artifacts/data-first-mechanisms-20261016/get-02.body": "06495ff8e643432e6948b7b4686ce44fc106217287dabdc1b38351d9ddec46c3",
+    ".artifacts/data-first-mechanisms-20261016/input-audit.json": "fdd7aecdc9cbce9caab190b97e8219786bdc7b9913945a44b6d16462b30c369f",
+    ".artifacts/data-first-mechanisms-20261016/model-input.json": "195e84043e756f26bbdff6f49ff253fadb140deb1a3183bf9e18f0f7045eedc8",
+    ".artifacts/frozen-history-transfer-20261001/replay.csv": "b192ef1bdcada0cce7f55bf5c2beda08bef6f82e7f8e6645bc00df9be41b50d3",
+    ".artifacts/mvp-reference-history-20260921/prepared/replay.csv": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+    "docs/plans/2026-10-16-btc-address-participation.contract.json": "3380a8fdd9fe4e21a7de1adba5e5958da489ef9872ff53bc57eda960be171054",
+    "docs/plans/2026-10-16-btc-address-participation.md": "76b8e42298e49de5ee44c55f9018abf1544b141fff96280bb19fbf1d5c1ef230",
+    "docs/plans/2026-10-16-data-first-mechanisms.md": "aa0bc2932b24721a9cb4127dd8507fb2557e54bb7f5e094d283d55757e3637b4"
+  },
+  "mechanism_signal_days": {
+    "(-1, 0, 1)": 88,
+    "(-1, 0, 2)": 14,
+    "(1, 0, 1)": 88,
+    "(1, 0, 2)": 14
+  },
+  "new_exchange_price_gets": 0,
+  "new_full_ctest": false,
+  "online_learning_proven": false,
+  "point_in_time_certified": false,
+  "production_changes": 0,
+  "protected_files": 6241,
+  "qualified_candidates": 0,
+  "result": {
+    "account_operations": 0,
+    "completed_utc": "2026-10-16T07:41:47.091270+00:00",
+    "compute_seconds": 6.774461166933179,
+    "decision": {
+      "reasons": [
+        "NO_ELIGIBLE_TRAINING_CANDIDATE"
+      ],
+      "status": "NO_GO_TRAIN_RISK"
+    },
+    "deployments": 0,
+    "evaluation_paths": 0,
+    "g4": false,
+    "independent_books": 16,
+    "independent_confirmation": false,
+    "market_attempts": 1,
+    "new_input_gets": 2,
+    "point_in_time_certified": false,
+    "protected_files": 6241,
+    "qualified_candidates": 0,
+    "selection": {
+      "fixed_index": 2,
+      "mechanism_index": null,
+      "parameters": null,
+      "price_index": 4,
+      "status": "NO_GO_TRAIN_RISK"
+    },
+    "source_freeze_sha256": "b7bffd3fcc6e99e7d43a9b6fffffe3cf317a7ccea4d8b488de89d38c6b557367",
+    "status": "BATCH_COMPLETED",
+    "training_paths": 8
+  },
+  "source_sha256": {
+    "tools/audit_btc_address_participation.py": "64c28ba5b56e25697220e32f41fe443f8e5b15f754504db041a8462742e16726",
+    "tools/audit_btc_fee_pressure.py": "8cdb95b24b6c5fc04412d4c67f346907d34a6cfa70d9f552ab4c272e47330f95",
+    "tools/audit_btc_old_output.py": "f35d25a695de2bbf6688507b41afacbfd8914cd7522a1e29fe31b581799503b8",
+    "tools/btc_address_participation.py": "5fc7111af9f433548cbf8126fec7a294d396bf9770d49905c3fd9b7d05faeae2",
+    "tools/btc_fee_pressure.py": "86fa2d8133c86b742c4a4d50834fd8f911b81e1adf985b05e824a4fe9bc795a4",
+    "tools/btc_old_output_model.py": "277632c0d6971d5893ca44569cad60de0d5d349e2de1c0630a6413baee8ae760",
+    "tools/run_btc_address_participation.py": "94a403e74820d911fc837ee2e8f608d88f61d3938b4a39224e44e0562ef0e4e8",
+    "tools/test_btc_address_participation.py": "42e7884f49e0c71bfbac59a508806ab302295bc30b77b29d8899cd755a03c27d"
+  },
+  "stage_start": "2026-10-16T07:28:29Z",
+  "status": "CLOSED_NO_GO",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 120
+  },
+  "training": [
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07674176616833933,
+          "close_drawdown_percent": 7.674176616833933,
+          "concentration": {
+            "active_weeks": 13,
+            "complete_cycles": 15,
+            "largest_cycle_share": 0.22455497509116723,
+            "largest_week_share": 0.37313024174550374,
+            "without_best_week": -631.8116746617543
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08000581046727996,
+          "drawdown_percent": 8.000581046727996,
+          "failed_entries": 0,
+          "fees": 40.571262215000004,
+          "fills": 30,
+          "funding": 8.867458351846787,
+          "gross": -141.82000000000153,
+          "holding_bars": 12268,
+          "insufficient": null,
+          "long_bars": 6213,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 23.721892366656903,
+            "2021-03": -163.5754265947926,
+            "2021-04": 236.1651446240703,
+            "2021-05": -302.4018309627718,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -206.09022056683716,
+          "net_percent": -2.0609022056683717,
+          "position_time_fraction": 0.12067201762669184,
+          "post_stop_exit_ms": 1621430100000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 6055,
+          "slippage": 14.831499999999364,
+          "stop_utc": "2021-05-19T13:10:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1621429800000
+          },
+          "turnover": 73765.93129999998
+        },
+        {
+          "close_drawdown": 0.0833214119008075,
+          "close_drawdown_percent": 8.33214119008075,
+          "concentration": {
+            "active_weeks": 13,
+            "complete_cycles": 15,
+            "largest_cycle_share": 0.23562264670482638,
+            "largest_week_share": 0.3898396540974793,
+            "without_best_week": -850.1744595667533
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08663592553447655,
+          "drawdown_percent": 8.663592553447655,
+          "failed_entries": 0,
+          "fees": 81.22932565,
+          "fills": 30,
+          "funding": 8.867458351846787,
+          "gross": -141.82000000000153,
+          "holding_bars": 12268,
+          "insufficient": null,
+          "long_bars": 6213,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 21.874714096657044,
+            "2021-03": -229.1043436547934,
+            "2021-04": 162.00155329407062,
+            "2021-05": -392.33520773777127,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -437.563284001837,
+          "net_percent": -4.37563284001837,
+          "position_time_fraction": 0.12067201762669184,
+          "post_stop_exit_ms": 1621430100000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 6055,
+          "slippage": 205.64650000000046,
+          "stop_utc": "2021-05-19T13:10:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1621429800000
+          },
+          "turnover": 73844.84150000001
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        -1,
+        0,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07751927958222715,
+          "close_drawdown_percent": 7.751927958222716,
+          "concentration": {
+            "active_weeks": 6,
+            "complete_cycles": 5,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 0.9590119610177348,
+            "without_best_week": -852.8962195772383
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.0789432789996831,
+          "drawdown_percent": 7.89432789996831,
+          "failed_entries": 0,
+          "fees": 13.320021055000002,
+          "fills": 10,
+          "funding": 10.448399138106701,
+          "gross": -654.6154999999981,
+          "holding_bars": 4191,
+          "insufficient": null,
+          "long_bars": 2461,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 0.0,
+            "2021-03": -181.14106246131996,
+            "2021-04": -78.69773841383903,
+            "2021-05": -423.40891931794795,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -683.2477201931069,
+          "net_percent": -6.832477201931069,
+          "position_time_fraction": 0.04122403210576015,
+          "post_stop_exit_ms": 1621774800000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1730,
+          "slippage": 4.863799999999996,
+          "stop_utc": "2021-05-23T12:55:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1621774500000
+          },
+          "turnover": 24218.2201
+        },
+        {
+          "close_drawdown": 0.0804537846918362,
+          "close_drawdown_percent": 8.04537846918362,
+          "concentration": {
+            "active_weeks": 6,
+            "complete_cycles": 5,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 1.0,
+            "without_best_week": -946.7528887922399
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08152904617938728,
+          "drawdown_percent": 8.152904617938727,
+          "failed_entries": 0,
+          "fees": 26.62016599,
+          "fills": 10,
+          "funding": 10.448399138106701,
+          "gross": -654.6154999999981,
+          "holding_bars": 4191,
+          "insufficient": null,
+          "long_bars": 2461,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 0.0,
+            "2021-03": -198.487238621321,
+            "2021-04": -118.69814788384065,
+            "2021-05": -465.02427862294826,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -782.2096651281099,
+          "net_percent": -7.822096651281099,
+          "position_time_fraction": 0.04122403210576015,
+          "post_stop_exit_ms": 1621774800000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1730,
+          "slippage": 90.52560000000031,
+          "stop_utc": "2021-05-23T12:55:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1621774500000
+          },
+          "turnover": 24200.1509
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        -1,
+        0,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.06163510366377094,
+          "close_drawdown_percent": 6.163510366377094,
+          "concentration": {
+            "active_weeks": 12,
+            "complete_cycles": 13,
+            "largest_cycle_share": 0.21803023741090036,
+            "largest_week_share": 0.41190501543756225,
+            "without_best_week": -635.1609743362351
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.06637140104896586,
+          "drawdown_percent": 6.637140104896585,
+          "failed_entries": 0,
+          "fees": 35.588110415,
+          "fills": 26,
+          "funding": -16.28861528158219,
+          "gross": -295.1659999999938,
+          "holding_bars": 10957,
+          "insufficient": null,
+          "long_bars": 4902,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": -34.74268324665354,
+            "2021-03": 136.50615132479288,
+            "2021-04": -284.5944883240718,
+            "2021-05": -144.63857488748363,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -327.4695951334161,
+          "net_percent": -3.2746959513341607,
+          "position_time_fraction": 0.1077765974189487,
+          "post_stop_exit_ms": 1620864600000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 6055,
+          "slippage": 13.004099999999681,
+          "stop_utc": "2021-05-13T00:05:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1620864300000
+          },
+          "turnover": 64705.65529999999
+        },
+        {
+          "close_drawdown": 0.07893887393606623,
+          "close_drawdown_percent": 7.893887393606623,
+          "concentration": {
+            "active_weeks": 12,
+            "complete_cycles": 13,
+            "largest_cycle_share": 0.2455020890956182,
+            "largest_week_share": 0.45650611369370425,
+            "without_best_week": -884.3259133912397
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08369306178643504,
+          "drawdown_percent": 8.369306178643503,
+          "failed_entries": 0,
+          "fees": 71.17553123999998,
+          "fills": 26,
+          "funding": -16.28861528158219,
+          "gross": -295.1659999999938,
+          "holding_bars": 10957,
+          "insufficient": null,
+          "long_bars": 4902,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": -73.25998009665454,
+            "2021-03": 81.10663084479165,
+            "2021-04": -357.25914875407216,
+            "2021-05": -243.83341795248634,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -593.2459159584214,
+          "net_percent": -5.932459159584214,
+          "position_time_fraction": 0.1077765974189487,
+          "post_stop_exit_ms": 1620864600000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 6055,
+          "slippage": 243.19300000000055,
+          "stop_utc": "2021-05-13T00:05:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1620864300000
+          },
+          "turnover": 64705.0284
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        1,
+        0,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07593952559335788,
+          "close_drawdown_percent": 7.593952559335788,
+          "concentration": {
+            "active_weeks": 10,
+            "complete_cycles": 8,
+            "largest_cycle_share": 0.4466867400341264,
+            "largest_week_share": 0.4731552500950782,
+            "without_best_week": -366.9511111601714
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07754235527266655,
+          "drawdown_percent": 7.754235527266655,
+          "failed_entries": 0,
+          "fees": 21.884351005000003,
+          "fills": 16,
+          "funding": -3.159477890781604,
+          "gross": 31.42000000000553,
+          "holding_bars": 6070,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 0.0,
+            "2021-03": 173.38586566131744,
+            "2021-04": 56.9279756138385,
+            "2021-05": 322.45212774794527,
+            "2021-06": -548.0759421373259,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": 4.690026885775296,
+          "net_percent": 0.04690026885775296,
+          "position_time_fraction": 0.0597064841045011,
+          "post_stop_exit_ms": 1624324800000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 4340,
+          "slippage": 8.005099999999954,
+          "stop_utc": "2021-06-22T01:15:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1624324500000
+          },
+          "turnover": 39789.7291
+        },
+        {
+          "close_drawdown": 0.08155473220863266,
+          "close_drawdown_percent": 8.155473220863266,
+          "concentration": {
+            "active_weeks": 10,
+            "complete_cycles": 8,
+            "largest_cycle_share": 0.4599579115972038,
+            "largest_week_share": 0.48842055969436055,
+            "without_best_week": -482.28937519016836
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08316795856329971,
+          "drawdown_percent": 8.316795856329971,
+          "failed_entries": 0,
+          "fees": 43.77817884,
+          "fills": 16,
+          "funding": -3.159477890781604,
+          "gross": 31.42000000000553,
+          "holding_bars": 6070,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": 0.0,
+            "2021-02": 0.0,
+            "2021-03": 164.39069686131734,
+            "2021-04": 12.720864923841873,
+            "2021-05": 304.4038476029473,
+            "2021-06": -608.5881103373249,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -127.07270094921842,
+          "net_percent": -1.270727009492184,
+          "position_time_fraction": 0.0597064841045011,
+          "post_stop_exit_ms": 1624324800000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 4340,
+          "slippage": 117.8739999999998,
+          "stop_utc": "2021-06-22T01:15:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1624324500000
+          },
+          "turnover": 39798.344399999994
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        1,
+        0,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07728189305494522,
+          "close_drawdown_percent": 7.728189305494522,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 7,
+            "largest_cycle_share": 0.5281344324344661,
+            "largest_week_share": 0.5222277689899063,
+            "without_best_week": -303.5741465687661
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08097078630221251,
+          "drawdown_percent": 8.097078630221251,
+          "failed_entries": 0,
+          "fees": 19.430337905,
+          "fills": 14,
+          "funding": -26.818669439292904,
+          "gross": 24.11649999999827,
+          "holding_bars": 5639,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 514.256811762556,
+            "2021-02": -489.86558022826284,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": 24.391231534293183,
+          "net_percent": 0.24391231534293184,
+          "position_time_fraction": 0.05546702864337425,
+          "post_stop_exit_ms": 1612791000000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3044,
+          "slippage": 7.1135999999995025,
+          "stop_utc": "2021-02-08T13:25:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612790700000
+          },
+          "turnover": 35327.8871
+        },
+        {
+          "close_drawdown": 0.08163778810517519,
+          "close_drawdown_percent": 8.163778810517519,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 7,
+            "largest_cycle_share": 0.5483888982632671,
+            "largest_week_share": 0.5072840044783427,
+            "without_best_week": -385.4947098787652
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08375645754186274,
+          "drawdown_percent": 8.375645754186275,
+          "failed_entries": 0,
+          "fees": 38.88884406000001,
+          "fills": 14,
+          "funding": -26.818669439292904,
+          "gross": 24.11649999999827,
+          "holding_bars": 5639,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 442.79875296255705,
+            "2021-02": -531.0319275832626,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -88.23317462070554,
+          "net_percent": -0.8823317462070555,
+          "position_time_fraction": 0.05546702864337425,
+          "post_stop_exit_ms": 1612791000000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3044,
+          "slippage": 100.27950000000006,
+          "stop_utc": "2021-02-08T13:25:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612790700000
+          },
+          "turnover": 35353.494600000005
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        -1,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.0710164646371177,
+          "close_drawdown_percent": 7.101646463711769,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 6,
+            "largest_cycle_share": 0.5381487522742902,
+            "largest_week_share": 0.6363830531523262,
+            "without_best_week": -468.07776918365926
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07146797030438244,
+          "drawdown_percent": 7.146797030438244,
+          "failed_entries": 0,
+          "fees": 16.771752965,
+          "fills": 12,
+          "funding": -10.0275365550326,
+          "gross": -264.4894999999997,
+          "holding_bars": 4589,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 185.9164694993051,
+            "2021-02": -463.2881859092813,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -277.3717164099762,
+          "net_percent": -2.773717164099762,
+          "position_time_fraction": 0.04513888888888889,
+          "post_stop_exit_ms": 1612821900000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1994,
+          "slippage": 6.13800000000011,
+          "stop_utc": "2021-02-08T22:00:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612821600000
+          },
+          "turnover": 30494.0963
+        },
+        {
+          "close_drawdown": 0.08127063398666344,
+          "close_drawdown_percent": 8.127063398666344,
+          "concentration": {
+            "active_weeks": 5,
+            "complete_cycles": 6,
+            "largest_cycle_share": 0.5438673569233374,
+            "largest_week_share": 0.6727088472622473,
+            "without_best_week": -555.2484837786578
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08145792172236437,
+          "drawdown_percent": 8.145792172236437,
+          "failed_entries": 0,
+          "fees": 33.590006560000006,
+          "fills": 12,
+          "funding": -10.0275365550326,
+          "gross": -264.4894999999997,
+          "holding_bars": 4589,
+          "insufficient": null,
+          "long_bars": 2595,
+          "monthly_net": {
+            "2021-01": 97.77841759430521,
+            "2021-02": -490.92688759928024,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -393.148470004975,
+          "net_percent": -3.9314847000497504,
+          "position_time_fraction": 0.04513888888888889,
+          "post_stop_exit_ms": 1612821900000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 1994,
+          "slippage": 105.09649999999988,
+          "stop_utc": "2021-02-08T22:00:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1612821600000
+          },
+          "turnover": 30536.369599999998
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        -1,
+        2
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07526673841367129,
+          "close_drawdown_percent": 7.5266738413671295,
+          "concentration": {
+            "active_weeks": 3,
+            "complete_cycles": 5,
+            "largest_cycle_share": 0.8294472004184859,
+            "largest_week_share": 1.0,
+            "without_best_week": -643.1256418287885
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07531117565985998,
+          "drawdown_percent": 7.531117565985998,
+          "failed_entries": 0,
+          "fees": 13.689866520000002,
+          "fills": 10,
+          "funding": 8.253238419941102,
+          "gross": -520.9309999999987,
+          "holding_bars": 3752,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -547.893304939942,
+            "2021-02": 0.0,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -547.893304939942,
+          "net_percent": -5.47893304939942,
+          "position_time_fraction": 0.0369058860560277,
+          "post_stop_exit_ms": 1611879900000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2022,
+          "slippage": 5.019199999999626,
+          "stop_utc": "2021-01-29T00:20:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1611879600000
+          },
+          "turnover": 24890.666400000002
+        },
+        {
+          "close_drawdown": 0.08160229614710908,
+          "close_drawdown_percent": 8.160229614710907,
+          "concentration": {
+            "active_weeks": 3,
+            "complete_cycles": 5,
+            "largest_cycle_share": 1.0,
+            "largest_week_share": 1.0,
+            "without_best_week": -706.8452942187905
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08160229614710908,
+          "drawdown_percent": 8.160229614710907,
+          "failed_entries": 0,
+          "fees": 27.38350769,
+          "fills": 10,
+          "funding": 8.253238419941102,
+          "gross": -520.9309999999987,
+          "holding_bars": 3752,
+          "insufficient": null,
+          "long_bars": 1730,
+          "monthly_net": {
+            "2021-01": -642.7086461099443,
+            "2021-02": 0.0,
+            "2021-03": 0.0,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -642.7086461099443,
+          "net_percent": -6.427086461099443,
+          "position_time_fraction": 0.0369058860560277,
+          "post_stop_exit_ms": 1611879900000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 2022,
+          "slippage": 86.14089999999989,
+          "stop_utc": "2021-01-29T00:20:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1611879600000
+          },
+          "turnover": 24894.097900000004
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        1,
+        1
+      ],
+      "start_ms": 1610323200000
+    },
+    {
+      "books": [
+        {
+          "close_drawdown": 0.07306243739507125,
+          "close_drawdown_percent": 7.306243739507125,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 11,
+            "largest_cycle_share": 0.5716864467312176,
+            "largest_week_share": 0.49418580204280427,
+            "without_best_week": -609.594983263567
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.07312427564919284,
+          "drawdown_percent": 7.312427564919284,
+          "failed_entries": 0,
+          "fees": 30.40273368,
+          "fills": 22,
+          "funding": 142.15048509699687,
+          "gross": -144.28649999999652,
+          "holding_bars": 8737,
+          "insufficient": null,
+          "long_bars": 5277,
+          "monthly_net": {
+            "2021-01": -216.0469351493084,
+            "2021-02": 206.04473458741995,
+            "2021-03": -317.9568182151088,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -327.95901877699725,
+          "net_percent": -3.2795901877699727,
+          "position_time_fraction": 0.08593995908089393,
+          "post_stop_exit_ms": 1615188000000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3460,
+          "slippage": 11.119300000000191,
+          "stop_utc": "2021-03-08T07:15:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1615187700000
+          },
+          "turnover": 55277.697600000014
+        },
+        {
+          "close_drawdown": 0.08225598061296108,
+          "close_drawdown_percent": 8.225598061296107,
+          "concentration": {
+            "active_weeks": 9,
+            "complete_cycles": 11,
+            "largest_cycle_share": 0.6077565724913518,
+            "largest_week_share": 0.5196645654291391,
+            "without_best_week": -769.1945214635653
+          },
+          "domain_daily_count": 353,
+          "drawdown": 0.08225598061296108,
+          "drawdown_percent": 8.225598061296107,
+          "failed_entries": 0,
+          "fees": 60.80727048,
+          "fills": 22,
+          "funding": 142.15048509699687,
+          "gross": -144.28649999999652,
+          "holding_bars": 8737,
+          "insufficient": null,
+          "long_bars": 5277,
+          "monthly_net": {
+            "2021-01": -303.9864335943075,
+            "2021-02": 120.4527531274216,
+            "2021-03": -341.57247511010974,
+            "2021-04": 0.0,
+            "2021-05": 0.0,
+            "2021-06": 0.0,
+            "2021-07": 0.0,
+            "2021-08": 0.0,
+            "2021-09": 0.0,
+            "2021-10": 0.0,
+            "2021-11": 0.0,
+            "2021-12": 0.0
+          },
+          "net": -525.1061555769957,
+          "net_percent": -5.251061555769956,
+          "position_time_fraction": 0.08593995908089393,
+          "post_stop_exit_ms": 1615188000000,
+          "quantity": 0.0,
+          "sharpe": {
+            "hac7": null,
+            "ordinary": null
+          },
+          "short_bars": 3460,
+          "slippage": 177.86189999999965,
+          "stop_utc": "2021-03-08T07:15:00+00:00",
+          "stopped": {
+            "reason": "RESEARCH_DRAWDOWN_8_PERCENT",
+            "t": 1615187700000
+          },
+          "turnover": 55279.3368
+        }
+      ],
+      "domain_bars": 101664,
+      "end_exclusive_ms": 1640822400000,
+      "parameters": [
+        0,
+        1,
+        2
+      ],
+      "start_ms": 1610323200000
+    }
+  ],
+  "training_feature_decisions": 353,
+  "web_document_errors": 1
+}

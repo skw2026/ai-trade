@@ -1,0 +1,33 @@
+{
+  "mechanism": "ACTIVE_ADDRESS_PARTICIPATION",
+  "scope": "DATA_FIRST_BOUNDED_DEVELOPMENT",
+  "input_commit": "f1a36afb962731c387bb03982758ab0103063da5",
+  "input_file": ".artifacts/data-first-mechanisms-20261016/get-02.body",
+  "input_sha256": "06495ff8e643432e6948b7b4686ce44fc106217287dabdc1b38351d9ddec46c3",
+  "metric": "AdrActCnt",
+  "feature": "LOG_COUNT_MINUS_PRIOR_FOUR_SAME_WEEKDAYS_OVER_PRIOR_28_DAY_POPULATION_SD",
+  "completion_clock": "MAX_ASSET_COMPLETION_AND_EOD_FOR_ALL_29_INPUT_DAYS_LE_DECISION",
+  "lag_days": 3,
+  "training_period_left_closed": ["2021-01-11", "2021-12-30"],
+  "evaluation_period_left_closed": ["2025-01-13", "2026-01-01"],
+  "market_files": {
+    ".artifacts/frozen-history-transfer-20261001/replay.csv": "b192ef1bdcada0cce7f55bf5c2beda08bef6f82e7f8e6645bc00df9be41b50d3",
+    ".artifacts/mvp-reference-history-20260921/prepared/replay.csv": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47"
+  },
+  "training_vectors": [[-1,0,1],[-1,0,2],[1,0,1],[1,0,2],[0,-1,1],[0,-1,2],[0,1,1],[0,1,2]],
+  "fixed_mechanism": [1,0,1],
+  "evaluation_names": ["candidate","fixed","price","passive","chain-delay","execution-delay"],
+  "research_drawdown_stop": 0.08,
+  "minimum_stress_profit_reference_usdt": 200,
+  "minimum_increment_reference_usdt": 50,
+  "minimum_complete_cycles": 12,
+  "minimum_active_weeks": 8,
+  "maximum_positive_profit_concentration": 0.35,
+  "point_in_time_certified": false,
+  "independent_confirmation": false,
+  "maximum_economic_attempts": 1,
+  "compute_seconds_limit": 1800,
+  "deadline_utc": "2026-10-16T15:28:29Z",
+  "production_changes": false,
+  "demo_unlock": false
+}
