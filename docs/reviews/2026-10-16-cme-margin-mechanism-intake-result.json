@@ -1,0 +1,167 @@
+{
+  "account_operations": 0,
+  "background_wait": false,
+  "cancelled_controls": 3,
+  "checked_utc": "2026-10-16T03:30:03.918542+00:00",
+  "complete_experiment_proposals": 0,
+  "control_receipt": {
+    "bytes": 0,
+    "finished": "2026-10-16T03:25:49.633283+00:00",
+    "http": "000",
+    "returncode": 92,
+    "sha256": null,
+    "started": "2026-10-16T03:25:49.180863+00:00",
+    "stderr": "curl: (92) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR (err 2)\n",
+    "url": "https://www.cmegroup.com/clearing/risk-management/files/BTC-2020-to-present.pdf"
+  },
+  "control_receipt_sha256": "cd66039eee9d6f8a78d771d776b8100cae7b8d175bddbe03086d6da939745454",
+  "deadline_utc": "2026-10-16T05:22:25+00:00",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "diagnostic_receipt_success_is_not_input_success": true,
+  "document_batches": [
+    {
+      "search_query": 2
+    },
+    {
+      "open": 3
+    },
+    {
+      "click": 3,
+      "open": 1
+    },
+    {
+      "find": 1,
+      "open": 2,
+      "screenshot": 1
+    },
+    {
+      "find": 1,
+      "open": 2,
+      "search_query": 2
+    },
+    {
+      "click": 1,
+      "open": 1
+    },
+    {
+      "find": 2,
+      "open": 1
+    },
+    {
+      "screenshot": 2,
+      "search_query": 2
+    },
+    {
+      "open": 1,
+      "search_query": 2
+    },
+    {
+      "find": 1,
+      "open": 2
+    },
+    {
+      "open": 1,
+      "screenshot": 1,
+      "search_query": 1
+    }
+  ],
+  "document_operations": 36,
+  "economic_attempts": 0,
+  "economic_verdict": "NOT_EVALUATED",
+  "event_count": null,
+  "executed_controls": 1,
+  "existing_boundary_regressions": 9,
+  "g4": false,
+  "independent_group_count": null,
+  "input_admitted": false,
+  "intake_verdict": "NOT_ADMITTED_EVENT_INPUT_UNBOUND",
+  "local_input_control_status": "FAILED_TECHNICAL",
+  "mechanism": "CME_BTC_PERFORMANCE_BOND_ADJUSTMENT",
+  "missing": [
+    "complete_2021_2025_event_catalogue",
+    "policy_rate_and_regime_identity",
+    "announcement_knowable_time_and_revisions",
+    "canonical_local_source_files"
+  ],
+  "new_full_ctest": false,
+  "new_price_mark_funding_requests": 0,
+  "old_fee_pressure_decision_unchanged": true,
+  "plan_sha256": "a7b036efd3590076437a24170a5dce5161fd7c2acc028c2bcb720d8f6fc8f981",
+  "planned_controls": 4,
+  "production_changes": 0,
+  "protected_files": 6217,
+  "qualified_candidates": 0,
+  "regression_skips": 0,
+  "retries": 0,
+  "root_cause_status": "UNKNOWN",
+  "source_evidence_sha256": {
+    ".artifacts/cme-margin-intake-20261016/web-01.json": "b854039bf21119d16521779a939f956cc759899df85f86abfdc717d143b46e72",
+    ".artifacts/cme-margin-intake-20261016/web-02.json": "8905c05e52bdc7e7276d305ef8f0adcab1ec73c1dd75f804ecba3ea286729696",
+    ".artifacts/cme-margin-intake-20261016/web-03.json": "5231b2bfa43a73026625557a5c623b51edb6f57ab7af12cc1f1e8c00e4023a91",
+    ".artifacts/cme-margin-intake-20261016/web-04.json": "210467af14e5da18076fdb6cf4b5e5256ba6936f2d91ec52cc7383429127d462",
+    ".artifacts/cme-margin-intake-20261016/web-05.json": "de11c64ddbc50b5efbcd0965ae79ae8f9cc4b3b957ffb862aa12d0d1f0811dc6",
+    ".artifacts/cme-margin-intake-20261016/web-06.json": "fdf2a78bf0f938b7b4941dac56340d2bd5cafc7247c30ea503e2d4550de876a4",
+    ".artifacts/cme-margin-intake-20261016/web-07.json": "cc4f4b2ae60ecb17ba0b2d5d1d3abfc579f8f1ac2c30318fa6cf7394164cc94d",
+    ".artifacts/cme-margin-intake-20261016/web-08.json": "e2fca68ed6ffac289856864d1630722b207b8a190e0c78b5301cee8319622564",
+    ".artifacts/cme-margin-intake-20261016/web-09.json": "3c84ee0c70689b1a6ab1395f20b743c173b82f06060a034a87b93cfd87bf5b21",
+    ".artifacts/cme-margin-intake-20261016/web-10.json": "9632e31d2ac594dd1e83fd130f0c8b4f6cb94c58ad277e177cf2d06ca0c4f762",
+    ".artifacts/cme-margin-intake-20261016/web-11.json": "d23459ba36bf515ea06488a1ecf63ecb88f99f1f1035bf641b58a1cedae34b8d"
+  },
+  "sources": [
+    {
+      "status": "BODY_READ",
+      "supports": "Public advisory and historical PDF channels; not a complete event catalogue.",
+      "url": "https://www.cmegroup.com/solutions/risk-management/performance-bonds-margins/faq-performance-bonds-margins.html"
+    },
+    {
+      "status": "BODY_READ",
+      "supports": "Official BTC PDF link and DataMine history channel; exact DataMine announcement fields unverified.",
+      "url": "https://www.cmegroup.com/solutions/risk-management/margin-services/historical-margins.html"
+    },
+    {
+      "status": "WEB_TEXT_ONLY_LOCAL_GET_FAILED",
+      "supports": "392-page PDF with dated margin amounts and roll codes; not announcement timestamps or a policy-rate series.",
+      "url": "https://www.cmegroup.com/clearing/risk-management/files/BTC-2020-to-present.pdf"
+    },
+    {
+      "status": "BODY_READ_SCREENSHOT_FAILED",
+      "supports": "Notice February 1 2021; effective after February 2 close; BTC maintenance 33 to 38 percent. Not exact public-release time.",
+      "url": "https://www.cmegroup.com/notices/clearing/2021/02/Chadv21-047.pdf"
+    },
+    {
+      "status": "BODY_READ_SCREENSHOT_FAILED",
+      "supports": "BTC-related intra-spread changes must not be treated as outright policy events.",
+      "url": "https://www.cmegroup.com/content/dam/cmegroup/notices/clearing/2025/01/chadv25-042.pdf"
+    },
+    {
+      "status": "RELEVANT_CLAIM_SEARCH_SNIPPET_ONLY",
+      "supports": "Dollar-to-percent change is a lead, not a verified historical regime map; PDF opened but relevant passage not obtained.",
+      "url": "https://www.cmegroup.com/notices/clearing/2024/03/Chadv24-076.pdf"
+    },
+    {
+      "status": "BODY_READ_WITHOUT_RESULT_CATALOGUE",
+      "supports": "Archive interface description, not a full 2021 or 2025 result set.",
+      "url": "https://www.cmegroup.com/notices.html?redirect=/tools-information/advisorySearch.html"
+    },
+    {
+      "status": "BODY_READ",
+      "supports": "Older non-BTC empirical evidence of volatility-driven margin changes; not BTC profitability.",
+      "url": "https://www.federalreserve.gov/econres/feds/an-empirical-analysis-of-futures-margin-changes-determinants-and-policy-implications.htm"
+    },
+    {
+      "status": "BODY_PARTS_READ",
+      "supports": "Underlying paper and price-risk controls; no replication or BTC extension claimed.",
+      "url": "https://www.federalreserve.gov/econresdata/feds/2014/files/201486pap.pdf"
+    },
+    {
+      "status": "FULL_TEXT_ACCESS_FAILED",
+      "supports": "Tool Internal Error; full paper not obtained.",
+      "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2124560"
+    }
+  ],
+  "started_utc": "2026-10-16T03:22:25Z",
+  "status": "CLOSED_INSUFFICIENT",
+  "training_vectors": 0,
+  "web_tool_internal_errors": 3
+}
