@@ -1,0 +1,26 @@
+{
+  "failure_id": "d3ff7b1ffd074fa0b2e0044da981c1d1",
+  "decision": "retry",
+  "goal": "Verify all existing 120 regressions and all new attribution controls before market diagnostic",
+  "expected": "Every declared regression executes successfully without skip; retain accurate test count",
+  "observed": "All 141 tests passed, but wrapper incorrectly asserted 142; gate exit 1",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new module contains 21 named test methods, not 22. Wrapper literal 142 was a counting error; no test was absent or skipped. Old 120 plus 21 equals 141.",
+  "evidence": [
+    ".artifacts/information-attribution-20261016/pre-diagnostic-tests.json",
+    ".artifacts/information-attribution-20261016/pre-diagnostic-tests.log",
+    ".artifacts/information-attribution-20261016/regression-before-count-fix.py",
+    "tools/test_information_attribution.py"
+  ],
+  "next_action": "Correct only wrapper total to 120+21 and preserve first receipt through exclusive retry1 output. One exact-command retry. No changed test assertions, model, contract, or economic data run.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "All causal, matched comparison and scope controls remain mandatory",
+    "data_feasibility": "Failure occurred before any market diagnostic; old files remain bound",
+    "method_feasibility": "21 named new controls and 120 previous controls all ran; only the wrapper arithmetic was wrong",
+    "budget_and_exit": "Original two hour scope and one diagnostic attempt remain. One exact retry; recurrent unresolved failure stops dependencies"
+  }
+}

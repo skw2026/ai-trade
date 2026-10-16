@@ -1,0 +1,1199 @@
+{
+  "background_wait": false,
+  "checked_utc": "2026-10-16T14:23:35.854336+00:00",
+  "evidence_sha256": {
+    ".artifacts/information-attribution-20261016/address-1d-2021_h2.json": "5a287272d1428087a14a8d14d581832f38f67881a0f9734849cce87546dcf6c8",
+    ".artifacts/information-attribution-20261016/address-1d-2025.json": "3018e33d645dc666a751ab4d998a81552b37404940e17c3b5eee136d01c18394",
+    ".artifacts/information-attribution-20261016/address-3d-2021_h2.json": "88560df436d93a42da704a84d0aec703c85bd4aa6bb6b6fb0d28b1abb47f513d",
+    ".artifacts/information-attribution-20261016/address-3d-2025.json": "07ca4fa632a1a64a393880aa7384162b3254bc7ed0a0624c9a16c8952cd55748",
+    ".artifacts/information-attribution-20261016/address-7d-2021_h2.json": "3a11ebe91ed66a1514049ac0db302a59e61386e8287c37ee1395b4c497ffb0f5",
+    ".artifacts/information-attribution-20261016/address-7d-2025.json": "4fd428aacd5ab9453d0dcfddbfa989774c7b91374d538aca56b715ccf2095376",
+    ".artifacts/information-attribution-20261016/closeout.py": "d388e5bf70db14ee89a5b8b7aeaeb75d06f064838c7834d544816aa67f1b0e29",
+    ".artifacts/information-attribution-20261016/diagnostic-attempt.json": "2f54c083faa74240efc23f3ad3e4e2d4c6344cb4a95d5d817525cc5146c7c002",
+    ".artifacts/information-attribution-20261016/fee_pressure-1d-2021_h2.json": "8437dfed40651962f7757426b17cd0724e1dfe9ddfa5a1bd195a1f4aa7e0f4a6",
+    ".artifacts/information-attribution-20261016/fee_pressure-1d-2025.json": "223d9f8d664c2c3ef136f11a6c1ee7af7cd9888393acd38723b093941f23074e",
+    ".artifacts/information-attribution-20261016/fee_pressure-3d-2021_h2.json": "4aeb06800443669366d0f7df597a088505e8043f016ced45f08de30189c99121",
+    ".artifacts/information-attribution-20261016/fee_pressure-3d-2025.json": "38eb9ace7cd2d0f82927e58b109a4b9572cb8dc82a6b0dbd1e3fb5dbb371acf7",
+    ".artifacts/information-attribution-20261016/fee_pressure-7d-2021_h2.json": "c367ffc1d28548e1ff45a2e8d4072e5aed4d0e5f33c4655f07fc6a5892b1a19c",
+    ".artifacts/information-attribution-20261016/fee_pressure-7d-2025.json": "32c906e9a7f288818c9d9be6697c68f76854101f47ce1a426ece46632dedb6b6",
+    ".artifacts/information-attribution-20261016/final-tests.json": "05c61ae8d87097df26b665678e39f05c83d6ccc483019b9e4f9a4af7f9fcbf52",
+    ".artifacts/information-attribution-20261016/final-tests.log": "eeacd04db7014de8163f658e5028fb387a6ff013775a18fc3a4d31076a0bee10",
+    ".artifacts/information-attribution-20261016/freeze.json": "f44565c5d3fa2928d2b664420c61ffe71597ae97b1019da4c0ae1ccd4c87a3f4",
+    ".artifacts/information-attribution-20261016/input-feature-audit.json": "a1fef6034e504185ba4c4ce7da6b20f022e24593e6edaffae3b5e91ba9c091c5",
+    ".artifacts/information-attribution-20261016/model-freeze.json": "5d0c3ffd819a162c5cfe0205ffba18192f3cb8045d043f201861d97b751846d6",
+    ".artifacts/information-attribution-20261016/old_output-1d-2021_h2.json": "f4fe232050bb70c8c2fd03db4e0e0efabf0c8e5d1983beac5c4aa16f72b662e4",
+    ".artifacts/information-attribution-20261016/old_output-1d-2025.json": "fe5dc00fe7e185eb9c81e065afc682eb08a55c519e44a92d9c9acb09fc6bc4cb",
+    ".artifacts/information-attribution-20261016/old_output-3d-2021_h2.json": "429a7665ca4be5cd7d38463adde80a9a06ab9e89df35db7ba43e9d4ee17a50a1",
+    ".artifacts/information-attribution-20261016/old_output-3d-2025.json": "ec3e8eef9a6e9099670b0fd2f59305ebe1ab2d57a7235ec5b0e7ad778d077e87",
+    ".artifacts/information-attribution-20261016/old_output-7d-2021_h2.json": "055833e67a23ebd97700a468ae6db5abf311375a8d86b95fa5210e370514b6e5",
+    ".artifacts/information-attribution-20261016/old_output-7d-2025.json": "c71bb765fac74ace68607e120948e2a7fa01019fcbd13b9914c6ce4d3b5ed72a",
+    ".artifacts/information-attribution-20261016/pre-diagnostic-retry1-tests.json": "05c61ae8d87097df26b665678e39f05c83d6ccc483019b9e4f9a4af7f9fcbf52",
+    ".artifacts/information-attribution-20261016/pre-diagnostic-retry1-tests.log": "7952460fec26d5c62481cfcdef94e5a864b7cc72978ba5ffd36dee964b733e4a",
+    ".artifacts/information-attribution-20261016/pre-diagnostic-tests.json": "05c61ae8d87097df26b665678e39f05c83d6ccc483019b9e4f9a4af7f9fcbf52",
+    ".artifacts/information-attribution-20261016/pre-diagnostic-tests.log": "18a6b0500b45324440810bea3082927d261183a7e038f145c4ec3471e89fff80",
+    ".artifacts/information-attribution-20261016/regression-before-count-fix.py": "693f6f371fd6db89ed662d97d5eb584e6926c28040b3ab35e6046b719795eb3a",
+    ".artifacts/information-attribution-20261016/regression.py": "0e399ef0e14ae901b33a3297cb048ea608b93db03d2486c1ca406892d04c4c08",
+    ".artifacts/information-attribution-20261016/result.json": "2470b61bd303456b90a279dd4538f7ec21dadbaeb9f986e26591bf7670215150",
+    ".artifacts/information-attribution-20261016/stage.py": "3be6cf8870eb034c4fb847d370c0f61bbb1563f3282be6d5708cbc72b7e7f2bb"
+  },
+  "formal_validation_failures": [
+    {
+      "at": "2026-10-16T14:20:10.133479+00:00",
+      "command_sha256": "d55149eaea01434ac71a4edf4b175f7b2af57386473ccdf882c74a753146eb34",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "information-attribution-synthetic",
+      "retry_of": null
+    }
+  ],
+  "input_sha256": {
+    ".artifacts/btc-fee-pressure-20261016/input-audit.json": "a2790441068af03df333deeeafa21dd3b94d3fad2189d0cb461e7f64d5c9f520",
+    ".artifacts/btc-fee-pressure-20261016/log-density.json": "fcb925e369cd98c560c40f6d54be098b7a58e0f9b4fe5e55195e9bb16aeb8efa",
+    ".artifacts/btc-fee-pressure-20261016/model-freeze.json": "ad9e590bfcad7381fa3242cac26e50b85d358d27066f685837961ebdfcf8a841",
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.body": "066c83c297c5dbdb4a4f69afa99a53327f8bddb7ee2209a924b41a600f148cf4",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.body": "7af48da6fdc71fe0d7fe17fa83d6b8ef5db20a116391b167f9e70e7772193afb",
+    ".artifacts/btc-old-output-direction-20261015/input-audit.json": "de3d023b44a0fcdf16fc52d06e57cad5ccb1144a4c892c381bea4bccdfeb71f5",
+    ".artifacts/btc-old-output-direction-20261015/model-freeze.json": "8c2e15b8b98783c28256fc55cb545529a60e24c886b5f5636054339b00cc5617",
+    ".artifacts/btc-old-output-direction-20261015/ratios.json": "06a54e57281f0abf56c48d8e3e60c97f88aac4bdc1755c010b644589f4032363",
+    ".artifacts/data-first-mechanisms-20261016/get-02.body": "06495ff8e643432e6948b7b4686ce44fc106217287dabdc1b38351d9ddec46c3",
+    ".artifacts/data-first-mechanisms-20261016/input-audit.json": "fdd7aecdc9cbce9caab190b97e8219786bdc7b9913945a44b6d16462b30c369f",
+    ".artifacts/data-first-mechanisms-20261016/model-freeze.json": "b7bffd3fcc6e99e7d43a9b6fffffe3cf317a7ccea4d8b488de89d38c6b557367",
+    ".artifacts/data-first-mechanisms-20261016/model-input.json": "195e84043e756f26bbdff6f49ff253fadb140deb1a3183bf9e18f0f7045eedc8",
+    ".artifacts/frozen-history-transfer-20261001/replay.csv": "b192ef1bdcada0cce7f55bf5c2beda08bef6f82e7f8e6645bc00df9be41b50d3",
+    ".artifacts/mvp-reference-history-20260921/prepared/replay.csv": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+    "docs/plans/2026-10-15-btc-fee-pressure-development.proposal.json": "4661266c865d519080297fe3e5656a555a923bb14ea2b4edfd1766fea9ac849d",
+    "docs/plans/2026-10-15-btc-old-output-direction.proposal.json": "cdfa85b5c5f11b793260c301236470400c0feb5feeefadc867165e1920f6c15c",
+    "docs/plans/2026-10-16-btc-address-participation.contract.json": "3380a8fdd9fe4e21a7de1adba5e5958da489ef9872ff53bc57eda960be171054",
+    "docs/plans/2026-10-16-btc-address-participation.md": "76b8e42298e49de5ee44c55f9018abf1544b141fff96280bb19fbf1d5c1ef230",
+    "docs/plans/2026-10-16-btc-fee-pressure-execution.md": "548f5c4c326f311e1f778420918f486fa277dbcd29792b759ce17c3c0d650aa7",
+    "docs/plans/2026-10-16-data-first-mechanisms.md": "aa0bc2932b24721a9cb4127dd8507fb2557e54bb7f5e094d283d55757e3637b4",
+    "docs/plans/2026-10-16-information-attribution.md": "3200036bbb8a7da66a1212c3ccf10c81a8c7d17fa65d58a521260d92e0ca037b"
+  },
+  "new_full_ctest": false,
+  "production_changes": 0,
+  "protected_files": 6310,
+  "result": {
+    "account_operations": 0,
+    "audited_predictions": 14283,
+    "cells": [
+      {
+        "full_2025": {
+          "date_sha256": "055cefcb12b7a93ab9fcba33a6002170080b919981c708f1fc6bbd7cd6a8aec8",
+          "increment_mse_reduction_bps_squared": 39.663573881634996,
+          "increment_mse_reduction_percent": 0.08409578287091464,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 157.69352330074716,
+            "placebo": 157.29511978325547,
+            "price": 155.94926204152463
+          },
+          "mse_bps_squared": {
+            "increment": 47125.09609369624,
+            "placebo": 47347.89447359968,
+            "price": 47164.75966757786
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 602.9855871436686,
+          "placebo_mse_reduction_percent": -0.3882873724207827,
+          "profit_estimate": null,
+          "rows": 353,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 1,
+        "samples": {
+          "2021": {
+            "rows": 353,
+            "unavailable_dates": 0,
+            "unmatured_dates": 0
+          },
+          "2025": {
+            "rows": 353,
+            "unavailable_dates": 0,
+            "unmatured_dates": 0
+          }
+        },
+        "signal": "old_output",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "4ae4bfaf1a703a5d9b6ee2fd88860fc572f8e23c182420955b24182addbdfcbe",
+            "increment_mse_reduction_bps_squared": 739.5346601900807,
+            "increment_mse_reduction_percent": 0.6048107982832847,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 266.4608098577406,
+              "placebo": 264.4067448484026,
+              "price": 266.71935802505584
+            },
+            "mse_bps_squared": {
+              "increment": 121535.83844644108,
+              "placebo": 121759.90587143258,
+              "price": 122275.37310663116
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 970.4006051632598,
+            "placebo_mse_reduction_percent": 0.42156259441470856,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "0d6e5c4361fd477f8fc04382dbdd933d306651ae5070c270e41b271c6b3be7f1",
+            "increment_mse_reduction_bps_squared": 435.0346729214905,
+            "increment_mse_reduction_percent": 0.7414468987755837,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 169.98976019126331,
+              "placebo": 167.80894223105562,
+              "price": 168.84144933252892
+            },
+            "mse_bps_squared": {
+              "increment": 58238.71170593604,
+              "placebo": 57682.43935031335,
+              "price": 58673.74637885753
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1002.4824541321997,
+            "placebo_mse_reduction_percent": 1.6895240030239373,
+            "profit_estimate": null,
+            "rows": 169,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "dea76c3cf4b7f69e96bd79b6a720170e5dfb2893657cb1c7b10ecfa9a2f27ba8",
+            "increment_mse_reduction_bps_squared": -323.4761855625801,
+            "increment_mse_reduction_percent": -0.8839594915509094,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 146.3996970263057,
+              "placebo": 147.63840242630857,
+              "price": 144.10806827967832
+            },
+            "mse_bps_squared": {
+              "increment": 36917.48175419336,
+              "placebo": 37855.83966835723,
+              "price": 36594.00556863078
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 693.3995235846556,
+            "placebo_mse_reduction_percent": -3.448198906129366,
+            "profit_estimate": null,
+            "rows": 184,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -22.736340198331597,
+          -23.450539156961526
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "edbd1ed83bab3d322509f0219dd541ad33104263750b0ac84def641b4221e69e",
+          "0456223450dda7f4e34a08087d2f06d07d821ec3fc9f7a6a86dde428a76082d7"
+        ],
+        "training_rows": [
+          171,
+          353
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "e04246b5a79d2cd149f9fc1f26309af428afb56f8b7554cc1cc8d76d3191db9a",
+          "increment_mse_reduction_bps_squared": -426.3741016711473,
+          "increment_mse_reduction_percent": -0.33312889414608765,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 268.5111952666726,
+            "placebo": 280.36783626808864,
+            "price": 267.5219272390008
+          },
+          "mse_bps_squared": {
+            "increment": 128417.1035651348,
+            "placebo": 132365.81438600158,
+            "price": 127990.72946346366
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 837.3281411339406,
+          "placebo_mse_reduction_percent": -3.418282668501265,
+          "profit_estimate": null,
+          "rows": 351,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 3,
+        "samples": {
+          "2021": {
+            "rows": 351,
+            "unavailable_dates": 0,
+            "unmatured_dates": 2
+          },
+          "2025": {
+            "rows": 351,
+            "unavailable_dates": 0,
+            "unmatured_dates": 2
+          }
+        },
+        "signal": "old_output",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "2382ef730cbc035bdcb6b1ee75a096ae94ad215835c0aa27d2e304d7430d62ce",
+            "increment_mse_reduction_bps_squared": -9669.782334831352,
+            "increment_mse_reduction_percent": -2.8395281983498286,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 470.8818030483905,
+              "placebo": 459.2484425236584,
+              "price": 462.8642917681969
+            },
+            "mse_bps_squared": {
+              "increment": 350211.649129846,
+              "placebo": 335329.92327158106,
+              "price": 340541.86679501465
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 7269.84487529558,
+            "placebo_mse_reduction_percent": 1.5304853915571133,
+            "profit_estimate": null,
+            "rows": 180,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "ebd17ca18adffdaadc2e8b3fc47175c5ff7c8fff741f5d5a4517dfcffc5886f7",
+            "increment_mse_reduction_bps_squared": 473.80151577981724,
+            "increment_mse_reduction_percent": 0.3309792212729034,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 273.45956692178197,
+              "placebo": 285.13167788816236,
+              "price": 273.5253519674708
+            },
+            "mse_bps_squared": {
+              "increment": 142677.6368003893,
+              "placebo": 143880.10101227387,
+              "price": 143151.43831616914
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1263.5265920383117,
+            "placebo_mse_reduction_percent": -0.5090152810727478,
+            "profit_estimate": null,
+            "rows": 167,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "a6dca6aa0755e73cde48ae46de9cfb455a2bf74f3fc0c45ebf3031acc2faf098",
+            "increment_mse_reduction_bps_squared": -1341.363740069625,
+            "increment_mse_reduction_percent": -1.1640622949184238,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 265.7544572248114,
+              "placebo": 275.38514790387467,
+              "price": 263.6743277839695
+            },
+            "mse_bps_squared": {
+              "increment": 116572.6315102903,
+              "placebo": 121968.1583934753,
+              "price": 115231.26777022069
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1086.0512242714883,
+            "placebo_mse_reduction_percent": -5.846408491042944,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -74.41909120986567,
+          -18.124253786871243
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "068b73a255f82416e430829738e1e753b153cde1f5470de073ef84525567ac4e",
+          "3f17d4e5377333910f235df0bf01b629efaf5341e54629314e5f46ebe2d8771d"
+        ],
+        "training_rows": [
+          169,
+          351
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "41da0a63c76e69bc3b7cbb090b25741188e396923f0a0867d33ab78788213aef",
+          "increment_mse_reduction_bps_squared": -923.763968976385,
+          "increment_mse_reduction_percent": -0.33520216156515015,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 404.3131912758539,
+            "placebo": 413.7987889804299,
+            "price": 403.44479329124226
+          },
+          "mse_bps_squared": {
+            "increment": 276507.89644087915,
+            "placebo": 286200.97866353876,
+            "price": 275584.13247190276
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 1095.9571463816405,
+          "placebo_mse_reduction_percent": -3.852488202570385,
+          "profit_estimate": null,
+          "rows": 347,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 7,
+        "samples": {
+          "2021": {
+            "rows": 347,
+            "unavailable_dates": 0,
+            "unmatured_dates": 6
+          },
+          "2025": {
+            "rows": 347,
+            "unavailable_dates": 0,
+            "unmatured_dates": 6
+          }
+        },
+        "signal": "old_output",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "396def602abedff60f387050833f70597afbd0edd691f16f50e4ec558b15f93f",
+            "increment_mse_reduction_bps_squared": -30771.139755999422,
+            "increment_mse_reduction_percent": -3.7147787235356273,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 722.8578885640514,
+              "placebo": 698.5312472859464,
+              "price": 705.5448845416087
+            },
+            "mse_bps_squared": {
+              "increment": 859114.9536430422,
+              "placebo": 822133.457899395,
+              "price": 828343.8138870428
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 12681.073012212966,
+            "placebo_mse_reduction_percent": 0.7497316794707972,
+            "profit_estimate": null,
+            "rows": 176,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "94a5d45fa061badc0b4afcaf0c098a77d8538a901a5be241686615dbe607baac",
+            "increment_mse_reduction_bps_squared": -183.4640632639149,
+            "increment_mse_reduction_percent": -0.06780822453565803,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 397.68941560985434,
+              "placebo": 398.50214038591434,
+              "price": 396.8273158021774
+            },
+            "mse_bps_squared": {
+              "increment": 270746.6066912462,
+              "placebo": 268829.05684710294,
+              "price": 270563.14262798225
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1585.0431945493067,
+            "placebo_mse_reduction_percent": 0.6409172232537356,
+            "profit_estimate": null,
+            "rows": 163,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "b9318034a8baf946f16d5d5fd19d98f42c2508efa200252f9a4e2030b4b21500",
+            "increment_mse_reduction_bps_squared": -1577.0992352713322,
+            "increment_mse_reduction_percent": -0.5452778185287386,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 421.18484418863596,
+              "placebo": 436.3563629667226,
+              "price": 420.76646333539486
+            },
+            "mse_bps_squared": {
+              "increment": 290805.6689076341,
+              "placebo": 310382.6127304791,
+              "price": 289228.5696723627
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1552.51369295979,
+            "placebo_mse_reduction_percent": -7.313953487402589,
+            "profit_estimate": null,
+            "rows": 178,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -98.14651064723981,
+          15.81196125346905
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "9a2053f0267c9fcee44260bddb75f60b02b6954c928c85f859f3565f868e2311",
+          "10b2fe5ae5ede805428a90e7caef8b3665560c2c673c34ad60cf8c72fe798186"
+        ],
+        "training_rows": [
+          165,
+          347
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "055cefcb12b7a93ab9fcba33a6002170080b919981c708f1fc6bbd7cd6a8aec8",
+          "increment_mse_reduction_bps_squared": 396.079069675231,
+          "increment_mse_reduction_percent": 0.8397775637294402,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 155.5818533374454,
+            "placebo": 155.89729284829176,
+            "price": 155.94926204152463
+          },
+          "mse_bps_squared": {
+            "increment": 46768.68059790264,
+            "placebo": 47134.84969351023,
+            "price": 47164.75966757786
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 344.84252860786466,
+          "placebo_mse_reduction_percent": 0.063415936556108,
+          "profit_estimate": null,
+          "rows": 353,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 1,
+        "samples": {
+          "2021": {
+            "rows": 353,
+            "unavailable_dates": 0,
+            "unmatured_dates": 0
+          },
+          "2025": {
+            "rows": 353,
+            "unavailable_dates": 0,
+            "unmatured_dates": 0
+          }
+        },
+        "signal": "fee_pressure",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "4ae4bfaf1a703a5d9b6ee2fd88860fc572f8e23c182420955b24182addbdfcbe",
+            "increment_mse_reduction_bps_squared": 262.0304394945802,
+            "increment_mse_reduction_percent": 0.2142953505985826,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 266.87585603558244,
+              "placebo": 266.668482347121,
+              "price": 266.71935802505584
+            },
+            "mse_bps_squared": {
+              "increment": 122013.34266713656,
+              "placebo": 122274.5439178864,
+              "price": 122275.37310663116
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 269.36735728274425,
+            "placebo_mse_reduction_percent": 0.0006781322548349215,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "0d6e5c4361fd477f8fc04382dbdd933d306651ae5070c270e41b271c6b3be7f1",
+            "increment_mse_reduction_bps_squared": 260.6955681496255,
+            "increment_mse_reduction_percent": 0.4443138272887998,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 168.8536727305773,
+              "placebo": 168.76801389392398,
+              "price": 168.84144933252892
+            },
+            "mse_bps_squared": {
+              "increment": 58413.05081070791,
+              "placebo": 58644.76139705046,
+              "price": 58673.74637885753
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 552.340912907781,
+            "placebo_mse_reduction_percent": 0.049400257518781694,
+            "profit_estimate": null,
+            "rows": 169,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "dea76c3cf4b7f69e96bd79b6a720170e5dfb2893657cb1c7b10ecfa9a2f27ba8",
+            "increment_mse_reduction_bps_squared": 520.4258727069011,
+            "increment_mse_reduction_percent": 1.4221615388095752,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 143.39197574266672,
+              "placebo": 144.07581536616217,
+              "price": 144.10806827967832
+            },
+            "mse_bps_squared": {
+              "increment": 36073.57969592388,
+              "placebo": 36563.24600928035,
+              "price": 36594.00556863078
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 423.71949318606966,
+            "placebo_mse_reduction_percent": 0.08405627881523307,
+            "profit_estimate": null,
+            "rows": 184,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -5.315309024157093,
+          -15.190714251648485
+        ],
+        "status": "DESCRIPTIVE_INCREMENT_ONLY",
+        "training_date_sha256": [
+          "edbd1ed83bab3d322509f0219dd541ad33104263750b0ac84def641b4221e69e",
+          "0456223450dda7f4e34a08087d2f06d07d821ec3fc9f7a6a86dde428a76082d7"
+        ],
+        "training_rows": [
+          171,
+          353
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "e04246b5a79d2cd149f9fc1f26309af428afb56f8b7554cc1cc8d76d3191db9a",
+          "increment_mse_reduction_bps_squared": 653.4633589200392,
+          "increment_mse_reduction_percent": 0.510555226663176,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 266.61916861417694,
+            "placebo": 264.3600336256101,
+            "price": 267.5219272390008
+          },
+          "mse_bps_squared": {
+            "increment": 127337.26610454361,
+            "placebo": 124946.04957965082,
+            "price": 127990.72946346366
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 663.4695212767072,
+          "placebo_mse_reduction_percent": 2.378828448416635,
+          "profit_estimate": null,
+          "rows": 351,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 3,
+        "samples": {
+          "2021": {
+            "rows": 351,
+            "unavailable_dates": 0,
+            "unmatured_dates": 2
+          },
+          "2025": {
+            "rows": 351,
+            "unavailable_dates": 0,
+            "unmatured_dates": 2
+          }
+        },
+        "signal": "fee_pressure",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "2382ef730cbc035bdcb6b1ee75a096ae94ad215835c0aa27d2e304d7430d62ce",
+            "increment_mse_reduction_bps_squared": -11269.650375890515,
+            "increment_mse_reduction_percent": -3.3093288886779244,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 467.5965552850149,
+              "placebo": 466.22632515462794,
+              "price": 462.8642917681969
+            },
+            "mse_bps_squared": {
+              "increment": 351811.51717090514,
+              "placebo": 345260.6427368742,
+              "price": 340541.86679501465
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 6575.466096441061,
+            "placebo_mse_reduction_percent": -1.3856669038288727,
+            "profit_estimate": null,
+            "rows": 180,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "ebd17ca18adffdaadc2e8b3fc47175c5ff7c8fff741f5d5a4517dfcffc5886f7",
+            "increment_mse_reduction_bps_squared": 518.9393610634286,
+            "increment_mse_reduction_percent": 0.36251075585931697,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 273.11085728311576,
+              "placebo": 271.0138456894164,
+              "price": 273.5253519674708
+            },
+            "mse_bps_squared": {
+              "increment": 142632.4989551057,
+              "placebo": 139634.40622256242,
+              "price": 143151.43831616914
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1208.8042916539775,
+            "placebo_mse_reduction_percent": 2.456861163936668,
+            "profit_estimate": null,
+            "rows": 167,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "a6dca6aa0755e73cde48ae46de9cfb455a2bf74f3fc0c45ebf3031acc2faf098",
+            "increment_mse_reduction_bps_squared": 733.121347220233,
+            "increment_mse_reduction_percent": 0.6362173752024745,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 262.47256924001266,
+              "placebo": 260.192177249577,
+              "price": 263.6743277839695
+            },
+            "mse_bps_squared": {
+              "increment": 114498.14642300045,
+              "placebo": 112692.34439382696,
+              "price": 115231.26777022069
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 637.0592995040339,
+            "placebo_mse_reduction_percent": 2.2033285110223,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          53.64808113805158,
+          -15.003037658672174
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "068b73a255f82416e430829738e1e753b153cde1f5470de073ef84525567ac4e",
+          "3f17d4e5377333910f235df0bf01b629efaf5341e54629314e5f46ebe2d8771d"
+        ],
+        "training_rows": [
+          169,
+          351
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "41da0a63c76e69bc3b7cbb090b25741188e396923f0a0867d33ab78788213aef",
+          "increment_mse_reduction_bps_squared": 854.7311772266344,
+          "increment_mse_reduction_percent": 0.31015253656296,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 403.1120950817883,
+            "placebo": 412.630928013679,
+            "price": 403.44479329124226
+          },
+          "mse_bps_squared": {
+            "increment": 274729.4012946761,
+            "placebo": 277452.7221821692,
+            "price": 275584.13247190276
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 718.1001231355533,
+          "placebo_mse_reduction_percent": -0.6780469156572206,
+          "profit_estimate": null,
+          "rows": 347,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 7,
+        "samples": {
+          "2021": {
+            "rows": 347,
+            "unavailable_dates": 0,
+            "unmatured_dates": 6
+          },
+          "2025": {
+            "rows": 347,
+            "unavailable_dates": 0,
+            "unmatured_dates": 6
+          }
+        },
+        "signal": "fee_pressure",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "396def602abedff60f387050833f70597afbd0edd691f16f50e4ec558b15f93f",
+            "increment_mse_reduction_bps_squared": -82355.08705937969,
+            "increment_mse_reduction_percent": -9.942138237614706,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 732.1182413508836,
+              "placebo": 765.4007390060801,
+              "price": 705.5448845416087
+            },
+            "mse_bps_squared": {
+              "increment": 910698.9009464226,
+              "placebo": 947353.7251257605,
+              "price": 828343.8138870428
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 37570.301599992126,
+            "placebo_mse_reduction_percent": -14.367211928614285,
+            "profit_estimate": null,
+            "rows": 176,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "94a5d45fa061badc0b4afcaf0c098a77d8538a901a5be241686615dbe607baac",
+            "increment_mse_reduction_bps_squared": -161.19830986176817,
+            "increment_mse_reduction_percent": -0.059578813394924206,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 397.6065524676148,
+              "placebo": 412.34584546943546,
+              "price": 396.8273158021774
+            },
+            "mse_bps_squared": {
+              "increment": 270724.340937844,
+              "placebo": 284314.3470119818,
+              "price": 270563.14262798225
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 933.173917784382,
+            "placebo_mse_reduction_percent": -5.082438151196058,
+            "profit_estimate": null,
+            "rows": 163,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "b9318034a8baf946f16d5d5fd19d98f42c2508efa200252f9a4e2030b4b21500",
+            "increment_mse_reduction_bps_squared": 1859.4203404526875,
+            "increment_mse_reduction_percent": 0.6428895812606042,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 419.2719175412662,
+              "placebo": 420.2469110945189,
+              "price": 420.76646333539486
+            },
+            "mse_bps_squared": {
+              "increment": 287369.14933191007,
+              "placebo": 278766.95709392015,
+              "price": 289228.5696723627
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1061.4783624537067,
+            "placebo_mse_reduction_percent": 3.617074409451818,
+            "profit_estimate": null,
+            "rows": 178,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          156.97020157991665,
+          -9.888574764428665
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "9a2053f0267c9fcee44260bddb75f60b02b6954c928c85f859f3565f868e2311",
+          "10b2fe5ae5ede805428a90e7caef8b3665560c2c673c34ad60cf8c72fe798186"
+        ],
+        "training_rows": [
+          165,
+          347
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "1bafc98020f111677e5630748f4e01f4e5e34d946819d21075e8ffb1692dccee",
+          "increment_mse_reduction_bps_squared": -471.91924250848166,
+          "increment_mse_reduction_percent": -0.9989935441713989,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 157.22598716182708,
+            "placebo": 158.9344165989388,
+            "price": 156.02417675080017
+          },
+          "mse_bps_squared": {
+            "increment": 47711.38793195917,
+            "placebo": 48082.6033517188,
+            "price": 47239.46868945069
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 597.3267589182254,
+          "placebo_mse_reduction_percent": -1.7848097907510836,
+          "profit_estimate": null,
+          "rows": 351,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 1,
+        "samples": {
+          "2021": {
+            "rows": 306,
+            "unavailable_dates": 47,
+            "unmatured_dates": 0
+          },
+          "2025": {
+            "rows": 351,
+            "unavailable_dates": 2,
+            "unmatured_dates": 0
+          }
+        },
+        "signal": "address",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "4ae4bfaf1a703a5d9b6ee2fd88860fc572f8e23c182420955b24182addbdfcbe",
+            "increment_mse_reduction_bps_squared": 606.2645930150695,
+            "increment_mse_reduction_percent": 0.4824300356351082,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 270.4802890361975,
+              "placebo": 270.85750240762036,
+              "price": 271.20539500761674
+            },
+            "mse_bps_squared": {
+              "increment": 125062.65073829012,
+              "placebo": 124509.87168627241,
+              "price": 125668.91533130518
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 205.0974938642144,
+            "placebo_mse_reduction_percent": 0.922299394386546,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "bdf0e013e7c1919686410a4082e7324fcfb67405ed6dfa24709cb2dffd8c21b5",
+            "increment_mse_reduction_bps_squared": -436.105777664775,
+            "increment_mse_reduction_percent": -0.7374895811675894,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 171.50535523496418,
+              "placebo": 174.22197375843757,
+              "price": 169.5419014191951
+            },
+            "mse_bps_squared": {
+              "increment": 59569.927976798055,
+              "placebo": 61179.84525635765,
+              "price": 59133.822199133276
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1163.4620772634546,
+            "placebo_mse_reduction_percent": -3.459987839673863,
+            "profit_estimate": null,
+            "rows": 167,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "dea76c3cf4b7f69e96bd79b6a720170e5dfb2893657cb1c7b10ecfa9a2f27ba8",
+            "increment_mse_reduction_bps_squared": -504.4238546220632,
+            "increment_mse_reduction_percent": -1.3841048248364443,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 144.2659085302298,
+              "placebo": 145.0592967856981,
+              "price": 143.75537229633304
+            },
+            "mse_bps_squared": {
+              "increment": 36948.47386952389,
+              "placebo": 36195.43271000854,
+              "price": 36444.05001490183
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 433.4827236401723,
+            "placebo_mse_reduction_percent": 0.682189012449582,
+            "profit_estimate": null,
+            "rows": 184,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          8.75601139793915,
+          27.737467811035838
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "4c15f502d1476594e518e13480bda3c3de80621b386da99b0186aaf7db8c2eea",
+          "4b42ffbcde34b46b79d4cf5e7ef4442b70a5bb33b199fa6ce8f2b85321bc9dbb"
+        ],
+        "training_rows": [
+          124,
+          306
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "3ecc32ec7b4ea670311d233c0ae7335fc342f398d89d9e9022ed29907ebd4c0d",
+          "increment_mse_reduction_bps_squared": 60.21693415309788,
+          "increment_mse_reduction_percent": 0.04708810795523641,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 266.90258077435317,
+            "placebo": 267.02494629419107,
+            "price": 266.9044617434323
+          },
+          "mse_bps_squared": {
+            "increment": 127821.18830375154,
+            "placebo": 127905.5714601095,
+            "price": 127881.40523790463
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 161.58520240716982,
+          "placebo_mse_reduction_percent": -0.018897369918561637,
+          "profit_estimate": null,
+          "rows": 349,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 3,
+        "samples": {
+          "2021": {
+            "rows": 304,
+            "unavailable_dates": 47,
+            "unmatured_dates": 2
+          },
+          "2025": {
+            "rows": 349,
+            "unavailable_dates": 2,
+            "unmatured_dates": 2
+          }
+        },
+        "signal": "address",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "2382ef730cbc035bdcb6b1ee75a096ae94ad215835c0aa27d2e304d7430d62ce",
+            "increment_mse_reduction_bps_squared": -1649.2284796886117,
+            "increment_mse_reduction_percent": -0.46600752694693126,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 471.85129126482593,
+              "placebo": 472.0512151852952,
+              "price": 470.34121227938067
+            },
+            "mse_bps_squared": {
+              "increment": 355555.2030234056,
+              "placebo": 357475.18724366504,
+              "price": 353905.974543717
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 1427.9707334784775,
+            "placebo_mse_reduction_percent": -1.008520046758114,
+            "profit_estimate": null,
+            "rows": 180,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "298f2d2738c96e1b27a4b2701ce45c18f518dac723afaf6b0497bdf5362ed44a",
+            "increment_mse_reduction_bps_squared": 112.28235285020047,
+            "increment_mse_reduction_percent": 0.07903961185948064,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 273.3585233741736,
+              "placebo": 273.30831892377546,
+              "price": 273.3242173349324
+            },
+            "mse_bps_squared": {
+              "increment": 141946.04790542574,
+              "placebo": 141882.31657783198,
+              "price": 142058.33025827596
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 298.5554146241245,
+            "placebo_mse_reduction_percent": 0.12390239989726226,
+            "profit_estimate": null,
+            "rows": 165,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "a6dca6aa0755e73cde48ae46de9cfb455a2bf74f3fc0c45ebf3031acc2faf098",
+            "increment_mse_reduction_bps_squared": 11.876641565481963,
+            "increment_mse_reduction_percent": 0.010220857070730964,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 262.83844445648,
+              "placebo": 263.099679222457,
+              "price": 262.84774567180756
+            },
+            "mse_bps_squared": {
+              "increment": 116188.1786306347,
+              "placebo": 116404.99732235976,
+              "price": 116200.0552722002
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 149.85781264043513,
+            "placebo_mse_reduction_percent": -0.17637001090875565,
+            "profit_estimate": null,
+            "rows": 182,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -25.354858240595473,
+          3.0590554213617027
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "189dc220137f95d068e57fdcb7dba90dbed8e28bdd43fc498654cc8f765b5dcf",
+          "b4e466246b95c5e1a0ca2277ef730ae63632bc2714692d58974493eb5ddeadb0"
+        ],
+        "training_rows": [
+          122,
+          304
+        ]
+      },
+      {
+        "full_2025": {
+          "date_sha256": "533695627d019debecacf041b763d65a672e8fdd5ef688ad0e11556dffaef610",
+          "increment_mse_reduction_bps_squared": -29309.53877310632,
+          "increment_mse_reduction_percent": -9.783479797128807,
+          "independent_samples": false,
+          "mae_bps": {
+            "increment": 446.36741601239106,
+            "placebo": 426.04626881871684,
+            "price": 420.66127365536363
+          },
+          "mse_bps_squared": {
+            "increment": 328891.48079038213,
+            "placebo": 304339.6161989756,
+            "price": 299581.94201727584
+          },
+          "p_value": null,
+          "paired_loss_difference_hac7_se": 14877.699772235492,
+          "placebo_mse_reduction_percent": -1.5881044597225404,
+          "profit_estimate": null,
+          "rows": 345,
+          "status": "DESCRIPTIVE_ONLY"
+        },
+        "horizon_days": 7,
+        "samples": {
+          "2021": {
+            "rows": 300,
+            "unavailable_dates": 47,
+            "unmatured_dates": 6
+          },
+          "2025": {
+            "rows": 345,
+            "unavailable_dates": 2,
+            "unmatured_dates": 6
+          }
+        },
+        "signal": "address",
+        "stages": {
+          "2021_h2": {
+            "date_sha256": "396def602abedff60f387050833f70597afbd0edd691f16f50e4ec558b15f93f",
+            "increment_mse_reduction_bps_squared": -78323.97666056734,
+            "increment_mse_reduction_percent": -8.341065786403494,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 804.1926115135465,
+              "placebo": 788.2308841383062,
+              "price": 762.2134147257796
+            },
+            "mse_bps_squared": {
+              "increment": 1017340.3885469326,
+              "placebo": 1003794.5460779221,
+              "price": 939016.4118863654
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 34479.83124224968,
+            "placebo_mse_reduction_percent": -6.89850926688551,
+            "profit_estimate": null,
+            "rows": 176,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h1": {
+            "date_sha256": "a391ee46104efe026b4cf4064d39d084bcc06ed9258b19aaaebd891cdd492cb8",
+            "increment_mse_reduction_bps_squared": -37464.43124275569,
+            "increment_mse_reduction_percent": -13.451269904260421,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 429.5787288372959,
+              "placebo": 397.1134836271745,
+              "price": 399.05330994722647
+            },
+            "mse_bps_squared": {
+              "increment": 315984.0915380976,
+              "placebo": 263712.27456160676,
+              "price": 278519.6602953419
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 25791.523321989658,
+            "placebo_mse_reduction_percent": 5.316459785292511,
+            "profit_estimate": null,
+            "rows": 161,
+            "status": "DESCRIPTIVE_ONLY"
+          },
+          "2025_h2": {
+            "date_sha256": "b9318034a8baf946f16d5d5fd19d98f42c2508efa200252f9a4e2030b4b21500",
+            "increment_mse_reduction_bps_squared": -21954.48565672808,
+            "increment_mse_reduction_percent": -6.688003983167105,
+            "independent_samples": false,
+            "mae_bps": {
+              "increment": 470.6553433613612,
+              "placebo": 463.51358275108885,
+              "price": 450.9301563300036
+            },
+            "mse_bps_squared": {
+              "increment": 350221.1211429637,
+              "placebo": 351000.56041070644,
+              "price": 328266.6354862356
+            },
+            "p_value": null,
+            "paired_loss_difference_hac7_se": 16760.741999939968,
+            "placebo_mse_reduction_percent": -6.925444887445492,
+            "profit_estimate": null,
+            "rows": 178,
+            "status": "DESCRIPTIVE_ONLY"
+          }
+        },
+        "standardized_signal_coefficients_bps": [
+          -321.1947811700498,
+          -140.5043975424147
+        ],
+        "status": "LINEAR_INCREMENT_NOT_STABLE",
+        "training_date_sha256": [
+          "a615b7f311aa176b0b6263875539bf05d8cd08d7cf1675282a9e0c68651475d3",
+          "4dc72b22e07ee0c82b6219bf6e49c131a514d9211d79250d4cc3b02396696de7"
+        ],
+        "training_rows": [
+          118,
+          300
+        ]
+      }
+    ],
+    "completed_utc": "2026-10-16T14:20:53.494448+00:00",
+    "compute_seconds": 2.75498583400622,
+    "confirmation_exit": "NOT_ADMITTED_NO_INDEPENDENT_SOURCE_OR_POWER_BOUND",
+    "demo_opening_lock_unchanged": true,
+    "deployments": 0,
+    "descriptive_consistent_cells": 1,
+    "diagnostic_attempts": 1,
+    "g4": false,
+    "independent_confirmation": false,
+    "independently_audited_fits": 54,
+    "limitations": [
+      "ALREADY_SEEN_DEVELOPMENT",
+      "RECONSTRUCTED_NOT_PIT",
+      "LINEAR_FIXED_RIDGE_ONLY",
+      "ONE_PERTURBATION_NOT_A_RANDOMIZATION_TEST",
+      "OVERLAPPING_LABELS_HAC_IS_DESCRIPTIVE",
+      "RIDGE_GAIN_MAY_INCLUDE_REGULARIZATION_EFFECT_NOT_CAUSAL_INFORMATION",
+      "NO_COST_OR_RISK_PAYOFF_TEST"
+    ],
+    "model_freeze_sha256": "5d0c3ffd819a162c5cfe0205ffba18192f3cb8045d043f201861d97b751846d6",
+    "new_data_gets": 0,
+    "online_learning_proven": false,
+    "promotion_eligible": false,
+    "protected_files": 6310,
+    "qualified_candidates": 0,
+    "risk_rules_changed": false,
+    "status": "METHOD_DIAGNOSTIC_COMPLETE",
+    "trading_paths_executed": 0
+  },
+  "source_sha256": {
+    "tools/audit_btc_address_participation.py": "64c28ba5b56e25697220e32f41fe443f8e5b15f754504db041a8462742e16726",
+    "tools/audit_btc_fee_pressure.py": "8cdb95b24b6c5fc04412d4c67f346907d34a6cfa70d9f552ab4c272e47330f95",
+    "tools/audit_information_attribution.py": "51d30514fe89cf8f73c8ac33234d4d80a11010bb389bf05d89a1e2ff8f47afa5",
+    "tools/btc_address_participation.py": "5fc7111af9f433548cbf8126fec7a294d396bf9770d49905c3fd9b7d05faeae2",
+    "tools/btc_fee_pressure.py": "86fa2d8133c86b742c4a4d50834fd8f911b81e1adf985b05e824a4fe9bc795a4",
+    "tools/btc_old_output_model.py": "277632c0d6971d5893ca44569cad60de0d5d349e2de1c0630a6413baee8ae760",
+    "tools/information_attribution.py": "81d328b7c9ce0421ef15fe1dfe695df091d78070974a6780432bfb3f5e36dd95",
+    "tools/run_information_attribution.py": "35883475e9241b0542be9f4d9df6cff7c4645a09dc0d6c3444a1946d270899e6",
+    "tools/test_information_attribution.py": "9d1764a934a5e9616f63c4b1401bb87851d3f2bb6659a7cc869e17243e014331"
+  },
+  "stage_start": "2026-10-16T14:15:00Z",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 141
+  }
+}
