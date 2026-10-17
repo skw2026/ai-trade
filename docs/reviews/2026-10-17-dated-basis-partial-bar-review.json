@@ -1,0 +1,26 @@
+{
+  "failure_id": "197da46b2d2e438da1a053c91e601d40",
+  "decision": "retry",
+  "goal": "Complete the frozen four-quarter conditional economic screen without imputing missing or incomplete prices",
+  "expected": "Record input quality and propagate partial or zero-trade path data as UNKNOWN under the approved plan",
+  "observed": "First spot archive passed checksum, but parser raised BAR_END at row 6776: open 1679661300000, close 1679661581646, zero volume/trades, followed by next open 1679666400000",
+  "root_cause_status": "confirmed",
+  "root_cause": "Parser required every row to have a full five-minute close despite the contract explicitly allowing incomplete paths to be diagnosed as UNKNOWN. The observed row is partial within its interval; adjacent missing/zero-trade rows remain missing/zero. Exchange-internal reason for the interruption is UNKNOWN and not needed to classify input quality.",
+  "evidence": [
+    ".artifacts/dated-basis-assumption-20261017/requests/0-archive/receipt.json",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-checksum/receipt.json",
+    ".artifacts/dated-basis-assumption-20261017/original/dated_basis_assumption_inputs.py",
+    "tools/test_dated_basis_assumption_inputs.py"
+  ],
+  "next_action": "Preserve original source and failed gate. Preserve close_ms and mark partial rows incomplete; forbid their use at critical times, classify risk UNKNOWN. Resume using only existing successful hash-bound receipts, no repeated GET. Run one exact-command retry after diagnostic regressions.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Conditional terminal economics and risk qualification remain separate; partial data does not become a passing risk path",
+    "data_feasibility": "First archive and checksum are local and hash-valid; observed issue is a parse/classification mismatch, not an unavailable critical entry/exit price",
+    "method_feasibility": "Regression verifies original partial timestamp retained, critical partial rows rejected and incomplete risk paths UNKNOWN; fees/policy/scenarios are unchanged",
+    "budget_and_exit": "Same deadline and 40 GET cap; reuse two completed GETs, at most 22 remaining frozen requests; any repeated failure stops dependencies"
+  }
+}

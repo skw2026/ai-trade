@@ -1,0 +1,1091 @@
+{
+  "actual_policy": {
+    "entries": 0,
+    "net": 0,
+    "not_economic_success": true
+  },
+  "audit": {
+    "absolute_tolerance": "0.0000001",
+    "compute_and_audit_seconds": 2.8758274170104414,
+    "independent_precision": 40,
+    "ledgers": 216,
+    "risk_bars": 424890,
+    "status": "DECIMAL_CASH_RISK_AND_POLICY_MATCH",
+    "verdict": "NO_GO_NO_TRADES"
+  },
+  "background_wait": false,
+  "candidates": 0,
+  "checked_utc": "2026-10-17T09:57:25.021782+00:00",
+  "common_scenario_sensitivity": [
+    {
+      "independent_quarter_sum": 44.42867929853128,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "zero_friction_h0_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 50.04353186599474,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "zero_friction_h0_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 58.76083874593496,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "zero_friction_h0_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 19.37389727912887,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "zero_friction_h0_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 24.974712715173155,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "zero_friction_h0_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 33.67022632791486,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "zero_friction_h0_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -5.5559232339437585,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "zero_friction_h0_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 0.03092508131703653,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "zero_friction_h0_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 8.704754121454243,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "zero_friction_h0_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 41.72772466510469,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "zero_friction_h8_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 48.83266118085521,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "zero_friction_h8_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 49.75343748096566,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "zero_friction_h8_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 16.679695032287782,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "zero_friction_h8_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 23.76686920674547,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "zero_friction_h8_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 24.685343566108713,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "zero_friction_h8_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -8.2434067719405,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "zero_friction_h8_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -1.1739063485401857,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "zero_friction_h8_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -0.2577224489286891,
+      "maximum_observed_model_drawdown": 0.010051473027822257,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "zero_friction",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "zero_friction_h8_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -2.493977101501514,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 3.1029215362996183,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 11.738259802024913,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -27.50618603278963,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -21.923300674514394,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -13.309718644870372,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -52.39364579235189,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -46.824703821934236,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -38.23276951845946,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -5.737433869315282,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 1.3464185783832363,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": 2.202483877841587,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -30.742901887677363,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -23.67678159949719,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -22.823014329329453,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -55.62365435482752,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -48.57517778646434,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -47.723697084096784,
+      "maximum_observed_model_drawdown": 0.010273749048243571,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -67.46603677330313,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -61.89046614680046,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -53.34261483982846,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -92.4207248884286,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -86.85913531497681,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -78.33299021105813,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -117.25095071868964,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -111.7032724673536,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -103.19872530612156,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -71.25323399467379,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b-25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -64.19472748584485,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b-25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -63.404248134920635,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b-25_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -96.20119669901214,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b0_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -89.16038157088406,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b0_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -88.37219496445323,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b0_m60"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -121.02473066168386,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b25_m0"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -114.00151867794375,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b25_m5"
+      },
+      "unknown_risk_quarters": 4
+    },
+    {
+      "independent_quarter_sum": -113.21561338087122,
+      "maximum_observed_model_drawdown": 0.010491958456166085,
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b25_m60"
+      },
+      "unknown_risk_quarters": 4
+    }
+  ],
+  "economic_attempts": 1,
+  "formal_failure_history": [
+    {
+      "at": "2026-10-17T09:51:00.514050+00:00",
+      "command_sha256": "5fa0eccd64228016370adcd0e6cc14f6378f64912eec9009a9a52048ecba8173",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "fixed-quarter-archives",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-17T09:56:13.291068+00:00",
+      "command_sha256": "2d16a1b2965837d3a20be199037920fe9a94e196756bb9d6d4d174219ee72001",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "frozen-policy-and-input-regression",
+      "retry_of": null
+    }
+  ],
+  "g4": false,
+  "independent_diagnostic_note": "Quarter-sum is not a continuously executed portfolio or independent confirmation",
+  "independent_quarter_ledgers": 216,
+  "input_quality": {
+    "actual_gets": 24,
+    "critical_complete": true,
+    "identity": "ASSUMED_NOT_HISTORICALLY_ADMITTED",
+    "mark_source": "MARK_ARCHIVE_ASSUMPTION",
+    "qualities": {
+      "BTCUSD_230331": {
+        "critical_complete": true,
+        "critical_missing": {
+          "future": [],
+          "spot": []
+        },
+        "historical_identity_admitted": false,
+        "incomplete_bars": {
+          "future": 0,
+          "mark": 0,
+          "spot": 1
+        },
+        "missing_path": {
+          "future": 0,
+          "mark": 0,
+          "spot": 16
+        },
+        "risk_path_observed": false,
+        "zero_trade_bars": {
+          "future": 2,
+          "mark": null,
+          "spot": 14
+        }
+      },
+      "BTCUSD_230630": {
+        "critical_complete": true,
+        "critical_missing": {
+          "future": [],
+          "spot": []
+        },
+        "historical_identity_admitted": false,
+        "incomplete_bars": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "missing_path": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "risk_path_observed": false,
+        "zero_trade_bars": {
+          "future": 3,
+          "mark": null,
+          "spot": 0
+        }
+      },
+      "BTCUSD_230929": {
+        "critical_complete": true,
+        "critical_missing": {
+          "future": [],
+          "spot": []
+        },
+        "historical_identity_admitted": false,
+        "incomplete_bars": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "missing_path": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "risk_path_observed": false,
+        "zero_trade_bars": {
+          "future": 130,
+          "mark": null,
+          "spot": 0
+        }
+      },
+      "BTCUSD_231229": {
+        "critical_complete": true,
+        "critical_missing": {
+          "future": [],
+          "spot": []
+        },
+        "historical_identity_admitted": false,
+        "incomplete_bars": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "missing_path": {
+          "future": 0,
+          "mark": 0,
+          "spot": 0
+        },
+        "risk_path_observed": false,
+        "zero_trade_bars": {
+          "future": 9,
+          "mark": null,
+          "spot": 0
+        }
+      }
+    }
+  },
+  "input_sha256": {
+    ".artifacts/dated-basis-assumption-20261017/bundle.json": "964e7fc324baf1361cd864d8ec502461ec4f17f6180986d775f4af14306239c2",
+    ".artifacts/dated-basis-assumption-20261017/input-manifest.json": "e8d4ca3adc4352c340754d55a4983b84335cd8973fad38d1d21a6fefcf1d9642",
+    ".artifacts/dated-basis-assumption-20261017/input-quality.json": "e061113088e0ae2f84b9163b628d7a4fb6108547196fbe1cf25eb9ed3e0217f3",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-archive/body": "840da3f1dba73d44c483b2c600528ee845366a8f2dec3db1d0be9e128741ec19",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-archive/receipt.json": "de78eeaa7135ccc261be5372617420876a4fee63b6156cd465b281f2c2484dcf",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-archive/request.json": "3a6ee6518ed1ad5d7be63b365bd26f3a0772db1d252a81fe67967064d410acc9",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-checksum/body": "af83099b35053fb760a0a9021881f91500a2fc69fdc978bfc43f27a670b81e87",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-checksum/receipt.json": "322b1cf65e7f0f9a6ac397d24a1543f0aaffe612928e8eb256a333089aa905d7",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-checksum/request.json": "418efb4601e7520c4b7e76ca0252e7139d976187ffb39d84ab9224948eb39fdb",
+    ".artifacts/dated-basis-assumption-20261017/requests/0-parsed.json": "23755e984d3d2621047d018778fcfdcfe6ce6069a6937d1ab46f28bc62caee0c",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-archive/body": "ffadf0572c05aabd3fb28938e231c95a33dc8686fb81afdb98373ec9283fbafe",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-archive/receipt.json": "611ce569be01285a7949a8c568a0685e20803d3c696986ce1953206ed7682f34",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-archive/request.json": "19c933ce09fa9beced5eb15643c83d9bb925e17e69d6a18397009f9c535cc91b",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-checksum/body": "8714cb0db12377a3b1c49a0075f0cacdf0f6d29d9286feb705d15836f39d118a",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-checksum/receipt.json": "2337e648bbb2c18b2259d0aaf0605ecf9ecbe81bb8f4c83bfd8791a48b10acda",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-checksum/request.json": "7107b47cea75a19121518bc4746f7805ad54908df57693f842539e3ec5ca7693",
+    ".artifacts/dated-basis-assumption-20261017/requests/1-parsed.json": "68310f3501e3ed8db67e757d23127f5fe2704facbffebb5eec696fb06ff7ddf0",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-archive/body": "f9b7c4aab310052fe3f7b6a5865e821dd40ade7868ddd39ee4805fbb0b3e2a78",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-archive/receipt.json": "21707cbc24f6b1632a1171e51aa4c59aefaa29eb3ba09ba2dd74d3f49d5257a0",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-archive/request.json": "1038f9554ce22689de58c4dec6d7c5156877b87fc34246e44acffae90e32bc55",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-checksum/body": "21033ef8fbe5e15f81d35d4dcfd641d8595d97e04a5b8dcf8f7b6837d5f2b271",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-checksum/receipt.json": "b3f4d46ba6dbf4297f2b57a66d0a2c714e162d3f0fcd4f9b9294f0f8b7a0dd4d",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-checksum/request.json": "01a25c71210156a23deeff8634fe95ded04a83e11cc6f2f72a7d6d9003d32852",
+    ".artifacts/dated-basis-assumption-20261017/requests/10-parsed.json": "be8daed215df27c6c14a167320d40bb33be69fc23ec49a9d7f6a969a0ad48924",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-archive/body": "37cd7f2dc5f57b37754b94256cc39299a359027119969484f58a5b8fadf6f849",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-archive/receipt.json": "2a7225f2723f83eb7cfefb60a92673064ece86254aa5724a1af2a733771e2460",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-archive/request.json": "38fb80c0ad244992d10268e8b315feabc9d115713b2fa8ccf3eec950a1d027b3",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-checksum/body": "dcc9e981c8f8fae18014fa22df117ecd075503acd6d3e756ebd85c1e9c52554c",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-checksum/receipt.json": "7eb29d18956b588e37283a52a0f52d8242cbb066be8e83942885a400e9a1b540",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-checksum/request.json": "3ee3748cab4a74c402583619fe00ec8106c2a82cbeef572a433ad9da116616ad",
+    ".artifacts/dated-basis-assumption-20261017/requests/11-parsed.json": "a957471d1f0237095f4f7b201bb79becd806fa7fc2d9621212cf5bc8e33ec19a",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-archive/body": "76d487be089d8479c735e0aa5104c1b92b09f8ed2da171fcd242a753b27f3073",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-archive/receipt.json": "34cc8a579b773ca65d702262a78004ad31a014ca17050725a4b871a0e8d6801d",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-archive/request.json": "8bb3951d4c7b82ad82be9685cd60d8d1fd193789afc161f046b880d8029b522c",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-checksum/body": "986388808a07945c8fd102b296cf140cccc7164fed03a754a96d61ac7e52d885",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-checksum/receipt.json": "1a5f61d04d7d2984f31903904a11a07e4005cd35ece1ee430472424dd607581c",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-checksum/request.json": "5c3e0c8bdecbcfc43c195b7499295685deebcc6a7963cb4a7f5b5d1fa37f83db",
+    ".artifacts/dated-basis-assumption-20261017/requests/2-parsed.json": "24f458ae34b7f24bf9e3a50497587526758d89d67cce98b13f0af939a4400eee",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-archive/body": "781415877a1eaf4b376351bb3dc3cc31bc941b009a7b89a6a833cb6fb757279f",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-archive/receipt.json": "6bb3e8a6152616fc800697065df713bcb3feb0ca330b2c6a79255689c8b10839",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-archive/request.json": "188045747603c40933b8983dbe556deef72fcfcc494dc3d1e3b41bcbec064044",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-checksum/body": "1716a1cfb10aec3e0bf656bfa56752e4338e709dbff9b50fea51638414fe4a39",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-checksum/receipt.json": "6579287d215bb3d4302696d9d632a281437e83f1703de08fb62b718047b1f81a",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-checksum/request.json": "21a5f69d5871d1834d4c7ac3f685f1f03c9296af91d9ba48e79563edebce1653",
+    ".artifacts/dated-basis-assumption-20261017/requests/3-parsed.json": "4256489ec6e126d5cb7816c22ad8f1a05b12419ec1cb5da2dd5f2298bdbd274b",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-archive/body": "9f99d27584e90481e5b5d5bc13c6ae2c3788a26fc1f3167211c50f8fadc2aa57",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-archive/receipt.json": "256c0fe535b7a00da9ba9a8b57f7e08c9c750da21661161a27659919e641120f",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-archive/request.json": "89cd079da3ab2ce7ca4faed2612c701ad9ca1858308d3ed10e82ed0334a38b27",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-checksum/body": "16fafbfb2a4d14716134ed9eb64c63b2ee212fc8b247fd9e7749690f813d50a5",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-checksum/receipt.json": "a46a145249b9656a8c6eb27bcd59b3dd6f706f354445657fd332b0b95dbcac58",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-checksum/request.json": "5ccfe689a1c6a7a41f0c824c69190961970370367d00ed2ae2a392ea6acb0197",
+    ".artifacts/dated-basis-assumption-20261017/requests/4-parsed.json": "30dbd25b2151f0370702acdaa823912c1e1a21941ecf71365ddafbfbb42ff6e9",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-archive/body": "f28fb5d8a8a3be357a36e77ded45f91d94281c5046067eb05785e7d9c8ebee4c",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-archive/receipt.json": "7745fa7f0f3a504bdee2c0f73f6fcde7045826fdd6b308cb61b3c9a3c186f047",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-archive/request.json": "7e1a20d353e63f4e7457fc522c38e94778f7aae8d9bb10b3e217fc6a7aaec748",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-checksum/body": "54aa01c8bca8427b5c177d5bc8fc346cd3fea7ea414a971cc5ea2a7ec173805b",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-checksum/receipt.json": "c08abd6e0a64c2f43a03c03052c71e37685a8352d91884c504262977aaab74b7",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-checksum/request.json": "c73a795572d6ed5672f744ba7d51ebb3257b4fbccf46e86b9d694f5683e3b629",
+    ".artifacts/dated-basis-assumption-20261017/requests/5-parsed.json": "668dc15685d8ea07f476a1ae0365749a2dc80da3c650ebba52afcb0e89e52ec4",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-archive/body": "4058d18e256eb96841c67cb6e27375f0dcee6d2d425b4ad5907f055890ca5761",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-archive/receipt.json": "8dca6730974505ae7a068fe8f37c3f72fb6059f04ca4bc99ca1fa98a98274ff9",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-archive/request.json": "3c829528351d95a958b09c07d35d364d273cddf5ab3b43810e307b2eed2e07c4",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-checksum/body": "43ae0300ad1297b7b14dd642bca05ab54ac999cc13cc0222412f06d2e431081a",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-checksum/receipt.json": "d42d670fac6f92b81820aaea436c01cde340bd6c3d4327cf33a5dee2d9524aaf",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-checksum/request.json": "49be39e09adc7d2db0897fa216270b427dbadf4f70d50a760de0426094fbc4c5",
+    ".artifacts/dated-basis-assumption-20261017/requests/6-parsed.json": "4101d3c983a1087b921b1b6c786786b05fcced97e584753f4662d7ef4287a7a6",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-archive/body": "6b23a8281ff4c4640758b6a1c0cbca213b3cf300c0891c20117a66c4543485e4",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-archive/receipt.json": "ba157e0d41d7d97f6d48918e222ec6725705a95d72d94cabfec7c8d2fe838bb7",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-archive/request.json": "41e3b108092704d6c9dddc438e67111b4e63bba0372ed23cdacb05e460fff424",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-checksum/body": "f967b2353d1c8c8eec738350a284000e3a0cbbbb448dd5d622f1ff094fd002e7",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-checksum/receipt.json": "9520992de0e4dfbe86f1746d8afb827fa2f9c3fcb2c8e405d63731b00f41c903",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-checksum/request.json": "fd10aee8d4240a3c44b5a4b485266763714d8d0308bb177575c064558b49ebe8",
+    ".artifacts/dated-basis-assumption-20261017/requests/7-parsed.json": "2bd1fd7cf6f690e012647c159739c9447abdc4e4b90bb10fcb5bdc9b62d38112",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-archive/body": "fd5e27202890fe1bf19de366980eefd84e183cc3e220be7fd5c5c82181e38589",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-archive/receipt.json": "b97631e7bc37774a44a3a8121839032148fa1876ff1251d68d52119a3f27147e",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-archive/request.json": "bfcf1f5831aaf0439df92c1fa6566a476cbc90e552c197154425e9160f32bade",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-checksum/body": "d7da75a4416c146e442540f46bc4dbec90000b163437f4ab180998b95d37ffb5",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-checksum/receipt.json": "4d4e9a0ca158664b1848c447768bffb8dcf203c079e60a21df2a74f90052ab69",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-checksum/request.json": "e840da9725401d8a0397e8f45f2619b5b1a33dd096bc89dd73970f3c278a3018",
+    ".artifacts/dated-basis-assumption-20261017/requests/8-parsed.json": "6ed2bbce5d813fefd4bc64e81e46ef981c540acc1c2d68938434079a489cd690",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-archive/body": "8e3b780eddcff7f19f24f25d799b2affe03113b90457b8caa22a454f065fbf56",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-archive/receipt.json": "0ddd6db8f7e32dbe23595c9124890955f80cb6f519dd47e08f279f8342ed9333",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-archive/request.json": "5f2007f4ad80315f0407e64e68a1ee1f2ed511c40a44f2603ad0a2fae01c2b20",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-checksum/body": "51bb1a5e99f2c3465f8e4baaa204993249e1250e658469e629b447a5c1a94a76",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-checksum/receipt.json": "47d9173a7040a9c2897fa51f210eef7be311eb2dcae548d1d417b501acac51bd",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-checksum/request.json": "3c0b4d87867ad2d17e01667eae2442a59de44f0338bbabd7bf9b3c1b4060ac5f",
+    ".artifacts/dated-basis-assumption-20261017/requests/9-parsed.json": "bfd5045c3811ff07f69f7681da7f11f7898fee76f097f848f3dd8a06e5199624",
+    ".artifacts/dated-basis-research-20261017/control-delivery/body": "c188481d46020f89b12a1b82a59c8eb424e39cb7a593d9ab39c46fb07f2a035a"
+  },
+  "new_full_ctest": false,
+  "plan_sha256": "1f9caa2b265b4d1d59fcb023dd08b9de0c4c65afae94f1606de234c278ed03b6",
+  "policy_vectors": 1,
+  "production_changes": 0,
+  "protected_files": 6443,
+  "public_gets": 24,
+  "quarters": {
+    "BTCUSD_230331": {
+      "base": {
+        "all_in_cost_bps": 47.287077378903064,
+        "cash_net_before_capital_charge": -10.629961075286046,
+        "entry_parity_component": 5.9765206229195345,
+        "extra_cost_headroom_bps": -54.00955974379758,
+        "fees": 7.453062958763551,
+        "gross": -1.6806205912253063,
+        "gross_cost_capacity_bps": -6.722482364901225,
+        "minimum_margin_ratio": 19.98969775232135,
+        "net": -13.502389935949395,
+        "observed_drawdown": 0.010273749048243571,
+        "opportunity_cost": 2.8724288606633492,
+        "risk_status": "UNKNOWN",
+        "slippage_drag": 1.496277525298865,
+        "terminal_conversion_component": -7.657141214144902
+      },
+      "decision": {
+        "decision_bar": 1679644500000,
+        "enter": false,
+        "expected_net": -5.754123867593641,
+        "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+        "future": 28343.8,
+        "spot": 28274.59
+      },
+      "decision_premium_bps": 24.477808519947075,
+      "profiles": {
+        "base": {
+          "central_net": -13.502389935949395,
+          "maximum_conditional_net": 38.7547014882839,
+          "minimum_conditional_net": -19.707147715378596
+        },
+        "stress": {
+          "central_net": -29.82901002475046,
+          "maximum_conditional_net": 22.406051274450874,
+          "minimum_conditional_net": -36.01949866335417
+        },
+        "zero_friction": {
+          "central_net": -1.6806205912253063,
+          "maximum_conditional_net": 50.56799748209778,
+          "minimum_conditional_net": -7.895939441064911
+        }
+      }
+    },
+    "BTCUSD_230630": {
+      "base": {
+        "all_in_cost_bps": 47.60814839428595,
+        "cash_net_before_capital_charge": -1.144686357779371,
+        "entry_parity_component": 4.979388732506973,
+        "extra_cost_headroom_bps": -16.073054560147284,
+        "fees": 7.529671053284485,
+        "gross": 7.883773458534506,
+        "gross_cost_capacity_bps": 31.535093834138024,
+        "minimum_margin_ratio": 19.98949930169927,
+        "net": -4.018263640036821,
+        "observed_drawdown": 0.008586095289404015,
+        "opportunity_cost": 2.87357728225745,
+        "risk_status": "UNKNOWN",
+        "slippage_drag": 1.4987887630295518,
+        "terminal_conversion_component": 2.904384726027387
+      },
+      "decision": {
+        "decision_bar": 1687506900000,
+        "enter": false,
+        "expected_net": -6.5261042007805194,
+        "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+        "future": 29996.0,
+        "spot": 29931.99
+      },
+      "decision_premium_bps": 21.38514679444814,
+      "profiles": {
+        "base": {
+          "central_net": -4.018263640036821,
+          "maximum_conditional_net": 9.461498838276384,
+          "minimum_conditional_net": -36.344496413139495
+        },
+        "stress": {
+          "central_net": -20.432540400674043,
+          "maximum_conditional_net": -7.004722573014078,
+          "minimum_conditional_net": -52.55025408620713
+        },
+        "zero_friction": {
+          "central_net": 7.88377345853587,
+          "maximum_conditional_net": 21.407330768635802,
+          "minimum_conditional_net": -24.630983665136228
+        }
+      }
+    },
+    "BTCUSD_230929": {
+      "base": {
+        "all_in_cost_bps": 47.641603560391374,
+        "cash_net_before_capital_charge": -1.3620468864179704,
+        "entry_parity_component": 0.3921135575837842,
+        "extra_cost_headroom_bps": -16.963629790268897,
+        "fees": 7.5300416897619975,
+        "gross": 7.669493442533167,
+        "gross_cost_capacity_bps": 30.677973770132667,
+        "minimum_margin_ratio": 19.989796765939445,
+        "net": -4.240907447567224,
+        "observed_drawdown": 0.005392480504873913,
+        "opportunity_cost": 2.8788605611492537,
+        "risk_status": "UNKNOWN",
+        "slippage_drag": 1.5014986391865932,
+        "terminal_conversion_component": 7.277379884949586
+      },
+      "decision": {
+        "decision_bar": 1695369300000,
+        "enter": false,
+        "expected_net": -11.708060710644894,
+        "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+        "future": 26676.6,
+        "spot": 26674.8
+      },
+      "decision_premium_bps": 0.6747941877716102,
+      "profiles": {
+        "base": {
+          "central_net": -4.240907447567224,
+          "maximum_conditional_net": 2.0323181512067094,
+          "minimum_conditional_net": -26.696903630181623
+        },
+        "stress": {
+          "central_net": -20.671733876703,
+          "maximum_conditional_net": -14.412934874853818,
+          "minimum_conditional_net": -43.08511230742988
+        },
+        "zero_friction": {
+          "central_net": 7.669493442534076,
+          "maximum_conditional_net": 13.95339665026404,
+          "minimum_conditional_net": -14.815811443961138
+        }
+      }
+    },
+    "BTCUSD_231229": {
+      "base": {
+        "all_in_cost_bps": 47.153558346270856,
+        "cash_net_before_capital_charge": -6.114890985013804,
+        "entry_parity_component": 11.167848624364929,
+        "extra_cost_headroom_bps": -35.92536345649569,
+        "fees": 7.427879860486909,
+        "gross": 2.8070487224431417,
+        "gross_cost_capacity_bps": 11.228194889772567,
+        "minimum_margin_ratio": 19.98992033316697,
+        "net": -8.981340864123922,
+        "observed_drawdown": 0.00624097124465842,
+        "opportunity_cost": 2.8664498791101183,
+        "risk_status": "UNKNOWN",
+        "slippage_drag": 1.4940598469706856,
+        "terminal_conversion_component": -8.360799901921956
+      },
+      "decision": {
+        "decision_bar": 1703231700000,
+        "enter": false,
+        "expected_net": -1.2423250300577835,
+        "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+        "future": 43770.0,
+        "spot": 43584.37
+      },
+      "decision_premium_bps": 42.59095634512988,
+      "profiles": {
+        "base": {
+          "central_net": -8.981340864123922,
+          "maximum_conditional_net": 18.225545594874347,
+          "minimum_conditional_net": -15.184346865420594
+        },
+        "stress": {
+          "central_net": -25.26791239688464,
+          "maximum_conditional_net": 2.0025059287545446,
+          "minimum_conditional_net": -31.456653285937136
+        },
+        "zero_friction": {
+          "central_net": 2.8070487224431417,
+          "maximum_conditional_net": 29.934942144203887,
+          "minimum_conditional_net": -3.406515367576503
+        }
+      }
+    }
+  },
+  "raw_response_bytes": 4126308,
+  "result_sha256": "aa3ec1e2c1026c0482982c1018b3e9adf76bedd374745ddc254a48dad3ba8537",
+  "sensitivity_scenarios": 54,
+  "source_sha256": {
+    ".artifacts/dated-basis-assumption-20261017/run.py": "8f29206e5ed73edca97415f26a831979547a61592402cc676dca35137c6c389d",
+    "tools/audit_dated_basis_assumption.py": "e7113438fea2225fb6f5d577959ae860f1cf9b133797b8ab053ed11f6ad6b340",
+    "tools/dated_basis_assumption_inputs.py": "834a1ab70fbdbdd5aaefa677c0c08cfb328b905272dc7fcf8f71c9f50e29ac02",
+    "tools/dated_basis_assumption_screen.py": "5dc8228b50d73b4dd597509f31656300fce23a9b97f164e0fdcd98869904b1cc",
+    "tools/test_audit_dated_basis_assumption.py": "673046a68fdcfc2be67ad84d25ff5f9417f134b8708e1d70ba19aa5629a8e40b",
+    "tools/test_dated_basis_assumption_inputs.py": "c1a35561be41f967fc8d34dece8f131c8de28fdc7b309aecaa772158d8b198a3",
+    "tools/test_dated_basis_assumption_screen.py": "54be222a3351369fad1baf1c90be3370809276986b09062d336615a43a65587a"
+  },
+  "status": "NO_GO_NO_TRADES",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 76
+  },
+  "training_vectors": 0,
+  "web_operations": 1
+}

@@ -1,0 +1,27 @@
+{
+  "failure_id": "cca00d95ad27491f977f822a1ba994f4",
+  "decision": "retry",
+  "goal": "Verify fixed economic decision ordering and irreversible risk stop without changing the market experiment",
+  "expected": "Synthetic halted portfolio keeps every later quarter HALTED and follows the frozen verdict priority",
+  "observed": "76 tests ran, one new fixture expected NO_GO_BASE but received NO_GO_EVEN_OPTIMISTIC; the fixture exits at unchanged traded prices after a mark spike, so zero-friction PnL is exactly zero",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new fixture expectation ignored the plan's earlier optimistic-nonpositive verdict. Engine and independent Decimal classifier both implement that priority. Actual market outcome remains NO_GO_NO_TRADES.",
+  "evidence": [
+    ".artifacts/dated-basis-assumption-20261017/final-tests.log",
+    ".artifacts/dated-basis-assumption-20261017/original/test_dated_basis_assumption_policy_walk.py",
+    "docs/plans/2026-10-17-dated-basis-assumption-screen.md",
+    ".artifacts/dated-basis-assumption-20261017/economic-freeze.json",
+    ".artifacts/dated-basis-assumption-20261017/independent-audit.json"
+  ],
+  "next_action": "Correct only the new synthetic expected label, add the explicit zero-friction-zero assertion, retain independent audit and all later-HALTED assertions. Preserve failed logs. Retry the exact 76-test command once, without rerunning the economic attempt or editing its frozen sources/results.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Verify decision priority and no reopening after hard stop, not make a market strategy pass",
+    "data_feasibility": "Fixture uses only synthetic prices; no new market request or unavailable input",
+    "method_feasibility": "Both financial implementations and contract agree; revised test additionally proves zero-friction terminal net is exactly zero",
+    "budget_and_exit": "One exact-command retry of the same 76 tests; preserve first FAIL and all frozen economic hashes; repeated failure blocks delivery"
+  }
+}
