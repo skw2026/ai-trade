@@ -1,0 +1,115 @@
+{
+  "background_wait": false,
+  "candidates": 0,
+  "checked_utc": "2026-10-17T01:03:42.347086+00:00",
+  "delivery_time_controls": [
+    {
+      "api_label_utc": "2023-03-31T00:00:00+00:00",
+      "difference_ms": 28800000,
+      "official_label_semantics_proven": false,
+      "planned_delivery_utc": "2023-03-31T08:00:00+00:00",
+      "symbol": "BTCUSD_230331"
+    },
+    {
+      "api_label_utc": "2023-06-30T00:00:00+00:00",
+      "difference_ms": 28800000,
+      "official_label_semantics_proven": false,
+      "planned_delivery_utc": "2023-06-30T08:00:00+00:00",
+      "symbol": "BTCUSD_230630"
+    },
+    {
+      "api_label_utc": "2023-09-29T00:00:00+00:00",
+      "difference_ms": 28800000,
+      "official_label_semantics_proven": false,
+      "planned_delivery_utc": "2023-09-29T08:00:00+00:00",
+      "symbol": "BTCUSD_230929"
+    },
+    {
+      "api_label_utc": "2023-12-29T00:00:00+00:00",
+      "difference_ms": 28800000,
+      "official_label_semantics_proven": false,
+      "planned_delivery_utc": "2023-12-29T08:00:00+00:00",
+      "symbol": "BTCUSD_231229"
+    }
+  ],
+  "direct_get_response_bytes": 178311,
+  "direct_gets": 9,
+  "document_operations": 23,
+  "document_tool_failures": 2,
+  "economic_attempts": 0,
+  "finished_input_audit_utc": "2026-10-17T01:01:49.121357+00:00",
+  "formal_validation_failures": 0,
+  "g4": false,
+  "interpretation": {
+    "confirmed": "Matching trades explain nonzero expiry-hour bars; later rows carry last price with zero volume",
+    "not_claimed": "Cross-format agreement does not prove successor identity, execution availability, settlement clock or archive correctness",
+    "unresolved": "Why original-symbol trades occur after announced expiry; actual settlement timing and historical risk parameters"
+  },
+  "new_full_ctest": false,
+  "plan_sha256": "d43cdd3d750d44aecf980dc9c283b07500d82981b7e70b7e527dec1bf9257654",
+  "private_audit_sha256": "90972c65cac0562b1fa0ea7c1bb680e30ad8cec8027c0916ef95eaae3fa654d3",
+  "production_changes": 0,
+  "protected_files": 6381,
+  "reason": "HISTORICAL_RULES_AND_TERMINAL_IDENTITY_UNBOUND",
+  "source_sha256": {
+    "tools/dated_basis_boundary_audit.py": "40f01c0d82e258bdfd00ac5cafb8230a6c1718255de57ac05dbafbfc07a92022",
+    "tools/dated_basis_input_probe.py": "4491c960a0b097e7ae63c5fb334cb560c66fffb634845d7edbd97b2345a369eb",
+    "tools/test_dated_basis_boundary_audit.py": "4fbaa1b1e1b841341b434a4a4b8bba54abdf89669c5b702e7a5967ccf9c406f1",
+    "tools/test_dated_basis_input_probe.py": "94a5300ee55df63397ad332075493c73609dd346c65e82bd44aacd8dcfcab2c3"
+  },
+  "status": "INPUT_NOT_ADMITTED",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 44
+  },
+  "total_public_research_operations": 32,
+  "trade_kline_controls": [
+    {
+      "agg_rows": 4942,
+      "conclusion": "CROSS_FORMAT_CONSISTENCY_ONLY",
+      "consistency_pass": true,
+      "constant_zero_volume_rows": 39,
+      "historical_identity_admitted": false,
+      "last_trade_delay_ms": 1961117,
+      "last_trade_ms": 1695976361117,
+      "matched_hours": 9,
+      "mismatched_hours": [],
+      "post_expiry_agg_rows": 2,
+      "post_expiry_contracts": "574.0",
+      "post_expiry_trades": 2,
+      "pre_expiry_matched_hours": 8,
+      "settlement_price_proven": false,
+      "subsequent_kline_rows": 39,
+      "symbol": "BTCUSD_230929",
+      "underlying_id_gaps": 0,
+      "underlying_trade_count": 7761,
+      "unmatched_nonempty_hours": []
+    },
+    {
+      "agg_rows": 4989,
+      "conclusion": "CROSS_FORMAT_CONSISTENCY_ONLY",
+      "consistency_pass": true,
+      "constant_zero_volume_rows": 63,
+      "historical_identity_admitted": false,
+      "last_trade_delay_ms": 3821,
+      "last_trade_ms": 1703836803821,
+      "matched_hours": 9,
+      "mismatched_hours": [],
+      "post_expiry_agg_rows": 4,
+      "post_expiry_contracts": "743.0",
+      "post_expiry_trades": 10,
+      "pre_expiry_matched_hours": 8,
+      "settlement_price_proven": false,
+      "subsequent_kline_rows": 63,
+      "symbol": "BTCUSD_231229",
+      "underlying_id_gaps": 0,
+      "underlying_trade_count": 7978,
+      "unmatched_nonempty_hours": []
+    }
+  ],
+  "training_vectors": 0,
+  "web_operations": 23
+}
