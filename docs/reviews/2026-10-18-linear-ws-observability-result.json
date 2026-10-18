@@ -1,0 +1,255 @@
+{
+  "account_requests": 0,
+  "audit_sha256": "6117e171c8a038aca23b528af39094f66dd78e922cc8b38f19bd79198fedd828",
+  "book_snapshots": 2456,
+  "capture_sha256": "badb17579ff2f57e56546b70ef918321bc456b94a5e944a0bd23b96a04f5de5e",
+  "capture_start_utc": "2026-10-18T16:39:15.240000+00:00",
+  "controls": {
+    "acks": 2,
+    "pongs": 10
+  },
+  "denominator": 960,
+  "deployments": 0,
+  "duration_ms": 120000,
+  "economic_computations": 0,
+  "exact_reviewed_retries": 1,
+  "formal_validation_failures": 1,
+  "g4": false,
+  "hypothesis": "OBSERVED_OLD_CTS_REPUBLICATION",
+  "independent_events": 0,
+  "l1_size_covered_pairs": 293,
+  "legacy_qualified_pairs": 260,
+  "next": "Freeze sufficient-depth inputs and one economic endpoint before any new capture; no more L1 diagnostic sampling",
+  "old_clock_republication_evidence": 30,
+  "old_l2_revalidated": false,
+  "original_bindings": 7662,
+  "qualified": false,
+  "qualified_candidates": 0,
+  "raw_frames": 2483,
+  "recent_l1_pairs": 929,
+  "reconnects": 0,
+  "rest_requests": 0,
+  "schema": "linear_ws_observability_v1",
+  "skip": 0,
+  "symbol_summary": [
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 1129,
+        "snapshots": 1130
+      },
+      "max_receive_gap_ms": 2134.383541999996,
+      "publication_receive_lag_range_ms": [
+        79,
+        392
+      ],
+      "symbol": "BTCUSDT"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 183,
+        "republished_changed_cts": 3,
+        "republished_ts_advanced": 3,
+        "same_update_same_content": 3,
+        "snapshots": 187
+      },
+      "max_receive_gap_ms": 4760.316333999988,
+      "publication_receive_lag_range_ms": [
+        50,
+        1940
+      ],
+      "symbol": "BTCUSDT-23OCT26"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 204,
+        "republished_changed_cts": 22,
+        "republished_ts_advanced": 22,
+        "same_update_same_content": 22,
+        "snapshots": 227
+      },
+      "max_receive_gap_ms": 5510.471999999994,
+      "publication_receive_lag_range_ms": [
+        50,
+        156
+      ],
+      "symbol": "BTCUSDT-30OCT26"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 130,
+        "fresh_publication_old_engine_clock": 3,
+        "republished_changed_cts": 2,
+        "republished_same_cts": 3,
+        "republished_ts_advanced": 5,
+        "same_update_same_content": 5,
+        "snapshots": 136
+      },
+      "max_receive_gap_ms": 5390.570334,
+      "publication_receive_lag_range_ms": [
+        50,
+        1939
+      ],
+      "symbol": "BTCUSDT-06NOV26"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 139,
+        "fresh_publication_old_engine_clock": 5,
+        "republished_changed_cts": 22,
+        "republished_same_cts": 5,
+        "republished_ts_advanced": 27,
+        "same_update_same_content": 27,
+        "snapshots": 167
+      },
+      "max_receive_gap_ms": 5638.545790999997,
+      "publication_receive_lag_range_ms": [
+        49,
+        2105
+      ],
+      "symbol": "BTCUSDT-27NOV26"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 70,
+        "republished_changed_cts": 15,
+        "republished_ts_advanced": 15,
+        "same_update_same_content": 15,
+        "snapshots": 86
+      },
+      "max_receive_gap_ms": 4769.547666000006,
+      "publication_receive_lag_range_ms": [
+        50,
+        2406
+      ],
+      "symbol": "BTCUSDT-25DEC26"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 414,
+        "fresh_publication_old_engine_clock": 3,
+        "republished_changed_cts": 8,
+        "republished_same_cts": 3,
+        "republished_ts_advanced": 11,
+        "same_update_same_content": 11,
+        "snapshots": 426
+      },
+      "max_receive_gap_ms": 5770.492958000006,
+      "publication_receive_lag_range_ms": [
+        49,
+        2257
+      ],
+      "symbol": "BTCUSDT-26MAR27"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 7,
+        "fresh_publication_old_engine_clock": 13,
+        "republished_changed_cts": 20,
+        "republished_same_cts": 13,
+        "republished_ts_advanced": 33,
+        "same_update_same_content": 33,
+        "snapshots": 41
+      },
+      "max_receive_gap_ms": 5282.2928750000065,
+      "publication_receive_lag_range_ms": [
+        50,
+        775
+      ],
+      "symbol": "BTCUSDT-25JUN27"
+    },
+    {
+      "continuity_issues": [],
+      "counts": {
+        "content_changes": 34,
+        "fresh_publication_old_engine_clock": 6,
+        "republished_changed_cts": 15,
+        "republished_same_cts": 6,
+        "republished_ts_advanced": 21,
+        "same_update_same_content": 21,
+        "snapshots": 56
+      },
+      "max_receive_gap_ms": 5989.985000000001,
+      "publication_receive_lag_range_ms": [
+        50,
+        1768
+      ],
+      "symbol": "BTCUSDT-24SEP27"
+    }
+  ],
+  "term_summary": [
+    {
+      "denominator": 120,
+      "legacy_condition": 56,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 118,
+      "symbol": "BTCUSDT-23OCT26",
+      "target_l1_size_covered": 116
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 21,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 115,
+      "symbol": "BTCUSDT-30OCT26",
+      "target_l1_size_covered": 1
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 41,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 117,
+      "symbol": "BTCUSDT-06NOV26",
+      "target_l1_size_covered": 117
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 16,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 113,
+      "symbol": "BTCUSDT-27NOV26",
+      "target_l1_size_covered": 0
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 41,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 116,
+      "symbol": "BTCUSDT-25DEC26",
+      "target_l1_size_covered": 0
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 53,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 117,
+      "symbol": "BTCUSDT-26MAR27",
+      "target_l1_size_covered": 29
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 5,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 118,
+      "symbol": "BTCUSDT-25JUN27",
+      "target_l1_size_covered": 0
+    },
+    {
+      "denominator": 120,
+      "legacy_condition": 27,
+      "missing_or_anomalous": 1,
+      "recent_l1_report": 115,
+      "symbol": "BTCUSDT-24SEP27",
+      "target_l1_size_covered": 30
+    }
+  ],
+  "tests": 114,
+  "websocket_attempts": 2
+}
