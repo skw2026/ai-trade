@@ -1,0 +1,123 @@
+{
+  "analysis": {
+    "actual_fees": "UNKNOWN",
+    "applied": {
+      "future": 720,
+      "spot": 1198
+    },
+    "capture": {
+      "bytes": 3570865,
+      "elapsed_ms": 121801.40825,
+      "frames": 2053,
+      "node": "v26.7.0",
+      "reason": "FIXED_120_SECONDS",
+      "reconnects": 0,
+      "rest_retries": 0,
+      "snapshot_attempts": 2,
+      "status": "CAPTURE_COMPLETE",
+      "websocket_attempts": 2
+    },
+    "confirmation_admitted": false,
+    "discarded": {
+      "future": 3,
+      "spot": 5
+    },
+    "exchange_clock_offsets": "UNKNOWN",
+    "failure": null,
+    "g4": false,
+    "independent_settlement_events": 0,
+    "metrics": {
+      "conditional_pressure_cash_forecast": {
+        "max": -6.861021485241508,
+        "median": -7.539059785524842,
+        "min": -10.553967266355812
+      },
+      "entry_basis_bps": {
+        "max": 87.71157377918541,
+        "median": 84.96612386531554,
+        "min": 72.77651333171269
+      },
+      "event_skew_ms": {
+        "max": 476.0,
+        "median": 49.0,
+        "min": 0.0
+      },
+      "future_depth_impact_bps": {
+        "max": 2.775016616280141,
+        "median": 0.0,
+        "min": 0.0
+      },
+      "max_receive_age_ms": {
+        "max": 557.3822920000093,
+        "median": 98.45722950000163,
+        "min": 11.937084000004688
+      },
+      "spot_depth_impact_bps": {
+        "max": 9.99160860524288,
+        "median": 0.0,
+        "min": -2e-36
+      }
+    },
+    "payoff_attempts": 0,
+    "positive_conditional_forecasts": 0,
+    "qualifying_pairs": 118,
+    "raw_sha256": "bf60e500702726d7824e02a50dd58011c66a4e23b67631209953af0fde379296",
+    "realized_trades": 0,
+    "rejected": {
+      "EVENT_SKEW": 1
+    },
+    "status": "QUOTE_INPUT_FEASIBLE_ONLY",
+    "ticks": 119
+  },
+  "candidate_qualified": false,
+  "closed_form_forecasts": 118,
+  "counts": {
+    "accounts": 0,
+    "deployments": 0,
+    "new_payoff_attempts": 0,
+    "new_policy_scans": 0,
+    "orders": 0,
+    "retries": 0,
+    "snapshot_gets": 2,
+    "websocket_connections": 2
+  },
+  "decimal_forecasts": 118,
+  "forecast_assumptions": {
+    "capital_opportunity_cost_deducted": false,
+    "extra_slippage_bps": 10,
+    "face_usd": 2500,
+    "future_fee_bps": 10,
+    "spot_fee_bps": 20,
+    "terminal_index_above_flat_spot_bps": 25
+  },
+  "formal_failures": 0,
+  "g4": false,
+  "independent_confirmation": false,
+  "limitation": "119 local ticks are one two-minute microstructure diagnostic, not independent economic events; no actual fees, fills, size rounding, leg execution, financing, settlement or full-life risk qualification",
+  "next": "No automatic long collection or second payoff batch. Complete a finite independent economic validation design with execution/settlement risk and affordable endpoint before market admission.",
+  "previous_private_diagnosis": ".artifacts/dated-basis-confirmation-route-20261018/diagnosis.json",
+  "prior_current_input_controls": {
+    "gets": 4,
+    "http_200": 4
+  },
+  "protected_bindings": 6985,
+  "scope_sha256": "ad225457647b40e2e93cd4d185c79c565cc3eda337135e2d01dc8a554568c2a8",
+  "skips": 0,
+  "source_hashes": {
+    ".artifacts/dated-basis-quotes-20261018/scope.json": "ad225457647b40e2e93cd4d185c79c565cc3eda337135e2d01dc8a554568c2a8",
+    ".artifacts/dated-basis-quotes-20261018/stage.py": "58b53495df30e6747739c64009ac4316000456027982bc73281f2dc2ade7b782",
+    "tools/analyze_dated_basis_quotes.py": "e9db4ff7216e128418860064b0e191b955268bf37fd4ad42d0482beb252c4c0f",
+    "tools/capture_dated_basis_quotes.mjs": "1025a069f82305521638ce42dc819e3d270b4d38e54f6cd08132a05c8d21ca12",
+    "tools/test_dated_basis_quotes.py": "45fb461985d1c308986fd8871fb0c5a5379a3aed2ffc82ecac3cc1867f094a42"
+  },
+  "status": "LIVE_QUOTE_INPUT_FEASIBLE_NO_STRESS_CASH_HEADROOM_IN_CAPTURE",
+  "tests": 60,
+  "unchanged_pressure_breakeven_entry_basis_bps": "115.57691019760345641379021494650191525465639301000",
+  "utc_last_frame": "2026-10-18T13:27:30.355000+00:00",
+  "utc_start": "2026-10-18T13:25:28.637000+00:00",
+  "web_reconnaissance": {
+    "includes_repeated_context_retrieval": true,
+    "official_only": true,
+    "operations": 14
+  }
+}
