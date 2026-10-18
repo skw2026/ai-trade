@@ -99,8 +99,14 @@ jobs:
               assert r['collector_sha256'] == os.environ['FACTS_COLLECTOR_SHA']
               assert r['base_sha256'] == os.environ['FACTS_BASE_SHA']
               assert r['response_pages'] == 3
-          text = json.dumps(r, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::notice title=Bybit Demo product facts::' + text)
+          # Account modes, asset signs, collateral settings and remote errors
+          # are private too, not merely exact balances or credentials.
+          public = {key: r[key] for key in (
+              'schema_version', 'status', 'response_pages', 'collector_sha256',
+              'base_sha256', 'manifest_sha256', 'order_submission',
+              'account_mutation', 'balances_published') if key in r}
+          text = json.dumps(public, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::notice title=Bybit Demo product receipt::' + text)
           assert r.get('status') == 'READONLY_FACTS_OBSERVED'
           PY
           [[ "${remote_exit}" == 0 ]]

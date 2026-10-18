@@ -1,0 +1,18 @@
+{
+  "stage": "existing-demo-account-20261018",
+  "status": "READONLY_DIAGNOSTIC_COMPLETED",
+  "source_sha": "4a85e7050633e0d300eb6da7389ca1a988b110d2",
+  "account_gets": 3,
+  "account_facts": "PRIVATE_ONLY",
+  "tests": {"new": 15, "existing": 25, "skipped": 0},
+  "formal_validation_failures": 1,
+  "exact_retry_passed": true,
+  "public_account_state_report": "REJECTED_BEFORE_EXECUTION",
+  "prior_annotation_cleanup": "USER_DECISION_PENDING",
+  "account_mutations": 0,
+  "economic_attempts": 0,
+  "trading_deployments": 0,
+  "g4": false,
+  "candidate_count": 0,
+  "operator_demo_entry_ban": "UNCHANGED"
+}
