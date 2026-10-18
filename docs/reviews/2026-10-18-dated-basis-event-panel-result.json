@@ -1,0 +1,475 @@
+{
+  "aggregate_account_return": null,
+  "audit": {
+    "closed_ledgers": 288,
+    "post_settlement_bars": 468,
+    "quarter_paths": 288,
+    "risk_bars": 6295536
+  },
+  "continuous_account_unchanged": true,
+  "economic_batches": 1,
+  "events": [
+    {
+      "candidate_absolute_support": true,
+      "candidate_base": {
+        "benchmark_excess": {
+          "0.06": 68.70750126975238,
+          "0.12": 36.95111985176668
+        },
+        "cash_drawdown": 0.02685652209970625,
+        "cash_net": 100.46388268773808,
+        "convergence_decision_bar": 1710878700000,
+        "entry_ms": 1703926800000,
+        "execution_fees": 7.9946287631515505,
+        "exit_ms": 1710879300000,
+        "first_unknown_ms": null,
+        "gross": 110.42057799754002,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 1.9620665466491118,
+        "spot_spend": 2400.7413266153594,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_capital_years": 530.6501296001311,
+      "candidate_halted_scenarios": 0,
+      "candidate_holding_days": 80.46875,
+      "candidate_stress": {
+        "benchmark_excess": {
+          "0.06": 52.792666542921204,
+          "0.12": 20.953658766913335
+        },
+        "cash_drawdown": 0.02680677281367226,
+        "cash_net": 84.63167431892907,
+        "convergence_decision_bar": 1710878700000,
+        "entry_ms": 1703926800000,
+        "execution_fees": 15.978738200537329,
+        "exit_ms": 1710879300000,
+        "first_unknown_ms": null,
+        "gross": 110.42057799754002,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 9.810165478072577,
+        "spot_spend": 2406.987772322148,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_uncertain_scenarios": 0,
+      "candidate_unresolved_scenarios": 0,
+      "central_delta": {
+        "base_h8_b0_m0": 20.882365451556325,
+        "stress_h8_b0_m0": 19.011470570410893
+      },
+      "central_increment_support": true,
+      "control_base": {
+        "benchmark_excess": {
+          "0.06": 44.08014378301353,
+          "0.12": 8.578770329845312
+        },
+        "cash_drawdown": 0.02685652209970625,
+        "cash_net": 79.58151723618175,
+        "convergence_decision_bar": null,
+        "entry_ms": 1703926800000,
+        "execution_fees": 8.136438504740418,
+        "exit_ms": 1711699200000,
+        "first_unknown_ms": null,
+        "gross": 89.17441275550618,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 1.45645701458443,
+        "spot_spend": 2400.7413266153594,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "control_capital_years": 593.2290639775705,
+      "control_holding_days": 89.95833333333333,
+      "control_stress": {
+        "benchmark_excess": {
+          "0.06": 30.026459909863952,
+          "0.12": -5.567283928790275
+        },
+        "cash_drawdown": 0.02680677281367226,
+        "cash_net": 65.62020374851818,
+        "convergence_decision_bar": null,
+        "entry_ms": 1703926800000,
+        "execution_fees": 16.268083512187165,
+        "exit_ms": 1711699200000,
+        "first_unknown_ms": null,
+        "gross": 89.17441275550618,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 7.2861254948011265,
+        "spot_spend": 2406.987772322148,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "event_account_initial_cash": 10000,
+      "observed_complete": true,
+      "pressure_cash_max": 84.63167431892907,
+      "pressure_cash_min": 84.63167431892907,
+      "symbol": "BTCUSD_240329"
+    },
+    {
+      "candidate_absolute_support": false,
+      "candidate_base": {
+        "benchmark_excess": {
+          "0.06": 107.683259594246,
+          "0.12": 81.09223319175177
+        },
+        "cash_drawdown": 0.029269661488537713,
+        "cash_net": 134.27428599674022,
+        "convergence_decision_bar": null,
+        "entry_ms": 1711789200000,
+        "execution_fees": 7.252705569261648,
+        "exit_ms": 1717752300000,
+        "first_unknown_ms": 1717752000000,
+        "gross": 143.45677117284822,
+        "risk_reason": null,
+        "risk_status": "UNKNOWN",
+        "settled": false,
+        "slippage_drag": 1.92977960684766,
+        "spot_spend": 2343.7882103521597,
+        "status": "CLOSED",
+        "unknown_reasons": {
+          "MARK_VALUATION_UNOBSERVED": 1
+        }
+      },
+      "candidate_capital_years": 444.3368852690613,
+      "candidate_halted_scenarios": 0,
+      "candidate_holding_days": 69.01736111111111,
+      "candidate_stress": {
+        "benchmark_excess": {
+          "0.06": 92.65173276378282,
+          "0.12": 65.99151964763914
+        },
+        "cash_drawdown": 0.02921660339594206,
+        "cash_net": 119.3119458799265,
+        "convergence_decision_bar": null,
+        "entry_ms": 1711789200000,
+        "execution_fees": 14.49614752679728,
+        "exit_ms": 1717752300000,
+        "first_unknown_ms": 1717752000000,
+        "gross": 143.45677117284822,
+        "risk_reason": null,
+        "risk_status": "UNKNOWN",
+        "settled": false,
+        "slippage_drag": 9.648677766126184,
+        "spot_spend": 2349.8864707694183,
+        "status": "CLOSED",
+        "unknown_reasons": {
+          "MARK_VALUATION_UNOBSERVED": 1
+        }
+      },
+      "candidate_uncertain_scenarios": 36,
+      "candidate_unresolved_scenarios": 0,
+      "central_delta": {
+        "base_h8_b0_m0": 0.0,
+        "stress_h8_b0_m0": 0.0
+      },
+      "central_increment_support": false,
+      "control_base": {
+        "benchmark_excess": {
+          "0.06": 107.683259594246,
+          "0.12": 81.09223319175177
+        },
+        "cash_drawdown": 0.029269661488537713,
+        "cash_net": 134.27428599674022,
+        "convergence_decision_bar": null,
+        "entry_ms": 1711789200000,
+        "execution_fees": 7.252705569261648,
+        "exit_ms": 1717752300000,
+        "first_unknown_ms": 1717752000000,
+        "gross": 143.45677117284822,
+        "risk_reason": null,
+        "risk_status": "UNKNOWN",
+        "settled": false,
+        "slippage_drag": 1.92977960684766,
+        "spot_spend": 2343.7882103521597,
+        "status": "CLOSED",
+        "unknown_reasons": {
+          "MARK_VALUATION_UNOBSERVED": 1
+        }
+      },
+      "control_capital_years": 444.3368852690613,
+      "control_holding_days": 69.01736111111111,
+      "control_stress": {
+        "benchmark_excess": {
+          "0.06": 92.65173276378282,
+          "0.12": 65.99151964763914
+        },
+        "cash_drawdown": 0.02921660339594206,
+        "cash_net": 119.3119458799265,
+        "convergence_decision_bar": null,
+        "entry_ms": 1711789200000,
+        "execution_fees": 14.49614752679728,
+        "exit_ms": 1717752300000,
+        "first_unknown_ms": 1717752000000,
+        "gross": 143.45677117284822,
+        "risk_reason": null,
+        "risk_status": "UNKNOWN",
+        "settled": false,
+        "slippage_drag": 9.648677766126184,
+        "spot_spend": 2349.8864707694183,
+        "status": "CLOSED",
+        "unknown_reasons": {
+          "MARK_VALUATION_UNOBSERVED": 1
+        }
+      },
+      "event_account_initial_cash": 10000,
+      "observed_complete": false,
+      "pressure_cash_max": 119.3119458799265,
+      "pressure_cash_min": 119.3119458799265,
+      "symbol": "BTCUSD_240628"
+    },
+    {
+      "candidate_absolute_support": true,
+      "candidate_base": {
+        "benchmark_excess": {
+          "0.06": 32.37349667841373,
+          "0.12": 17.6083822486464
+        },
+        "cash_drawdown": 0.02239848891629758,
+        "cash_net": 47.13861110818107,
+        "convergence_decision_bar": 1722838800000,
+        "entry_ms": 1719651600000,
+        "execution_fees": 7.156114319243688,
+        "exit_ms": 1722839400000,
+        "first_unknown_ms": null,
+        "gross": 56.262063237184066,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 1.9673378097586465,
+        "spot_spend": 2434.451391017539,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_capital_years": 246.72552526023233,
+      "candidate_halted_scenarios": 0,
+      "candidate_holding_days": 36.895833333333336,
+      "candidate_stress": {
+        "benchmark_excess": {
+          "0.06": 17.318302778076035,
+          "0.12": 2.514771262462098
+        },
+        "cash_drawdown": 0.02235812897613419,
+        "cash_net": 32.12183429368997,
+        "convergence_decision_bar": 1722838800000,
+        "entry_ms": 1719651600000,
+        "execution_fees": 14.303620470859295,
+        "exit_ms": 1722839400000,
+        "first_unknown_ms": null,
+        "gross": 56.262063237184066,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 9.836608472635362,
+        "spot_spend": 2440.7855463349915,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_uncertain_scenarios": 0,
+      "candidate_unresolved_scenarios": 0,
+      "central_delta": {
+        "base_h8_b0_m0": -13.629674671057728,
+        "stress_h8_b0_m0": -15.27015148612736
+      },
+      "central_increment_support": false,
+      "control_base": {
+        "benchmark_excess": {
+          "0.06": 24.76841897645204,
+          "0.12": -11.231447826334716
+        },
+        "cash_drawdown": 0.02239848891629758,
+        "cash_net": 60.768285779238795,
+        "convergence_decision_bar": null,
+        "entry_ms": 1719651600000,
+        "execution_fees": 7.484653767750659,
+        "exit_ms": 1727424000000,
+        "first_unknown_ms": null,
+        "gross": 69.72570726613912,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 1.4727677191499424,
+        "spot_spend": 2434.451391017539,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "control_capital_years": 601.558903485987,
+      "control_holding_days": 89.95833333333333,
+      "control_stress": {
+        "benchmark_excess": {
+          "0.06": 11.29845157065811,
+          "0.12": -24.795082638501114
+        },
+        "cash_drawdown": 0.02235812897613419,
+        "cash_net": 47.39198577981733,
+        "convergence_decision_bar": null,
+        "entry_ms": 1719651600000,
+        "execution_fees": 14.965988543318392,
+        "exit_ms": 1727424000000,
+        "first_unknown_ms": null,
+        "gross": 69.72570726613912,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 7.36773294300292,
+        "spot_spend": 2440.7855463349915,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "event_account_initial_cash": 10000,
+      "observed_complete": true,
+      "pressure_cash_max": 32.12183429368997,
+      "pressure_cash_min": 32.12183429368997,
+      "symbol": "BTCUSD_240927"
+    },
+    {
+      "candidate_absolute_support": true,
+      "candidate_base": {
+        "benchmark_excess": {
+          "0.06": -0.2976647971929225,
+          "0.12": -33.572235884321714
+        },
+        "cash_drawdown": 0.03584133350262695,
+        "cash_net": 32.97690628993587,
+        "convergence_decision_bar": 1734632400000,
+        "entry_ms": 1727514000000,
+        "execution_fees": 8.034042931557543,
+        "exit_ms": 1734633000000,
+        "first_unknown_ms": null,
+        "gross": 42.99073866322715,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 1.9797894417333737,
+        "spot_spend": 2456.681354599648,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_capital_years": 556.0191265927193,
+      "candidate_halted_scenarios": 0,
+      "candidate_holding_days": 82.39583333333333,
+      "candidate_stress": {
+        "benchmark_excess": {
+          "0.06": -16.32710761459115,
+          "0.12": -49.68825521015431
+        },
+        "cash_drawdown": 0.035773948103857,
+        "cash_net": 17.03403998097201,
+        "convergence_decision_bar": 1734632400000,
+        "entry_ms": 1727514000000,
+        "execution_fees": 16.057810755838354,
+        "exit_ms": 1734633000000,
+        "first_unknown_ms": null,
+        "gross": 42.99073866322715,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": false,
+        "slippage_drag": 9.898887926416137,
+        "spot_spend": 2463.073349659783,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "candidate_uncertain_scenarios": 0,
+      "candidate_unresolved_scenarios": 0,
+      "central_delta": {
+        "base_h8_b0_m0": -5.766526980429262,
+        "stress_h8_b0_m0": -7.802549261639797
+      },
+      "central_increment_support": false,
+      "control_base": {
+        "benchmark_excess": {
+          "0.06": 2.414837074607327,
+          "0.12": -33.91375912115048
+        },
+        "cash_drawdown": 0.03584133350262695,
+        "cash_net": 38.74343327036513,
+        "convergence_decision_bar": null,
+        "entry_ms": 1727514000000,
+        "execution_fees": 7.979970559010125,
+        "exit_ms": 1735286400000,
+        "first_unknown_ms": null,
+        "gross": 48.205188545747205,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 1.481784716371294,
+        "spot_spend": 2456.681354599648,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "control_capital_years": 607.0519819538209,
+      "control_holding_days": 89.95833333333333,
+      "control_stress": {
+        "benchmark_excess": {
+          "0.06": -11.586529674617452,
+          "0.12": -48.00964859184671
+        },
+        "cash_drawdown": 0.035773948103857,
+        "cash_net": 24.836589242611808,
+        "convergence_decision_bar": null,
+        "entry_ms": 1727514000000,
+        "execution_fees": 15.95574581316099,
+        "exit_ms": 1735286400000,
+        "first_unknown_ms": null,
+        "gross": 48.205188545747205,
+        "risk_reason": null,
+        "risk_status": "MODEL_OBSERVED_ONLY",
+        "settled": true,
+        "slippage_drag": 7.412853489973713,
+        "spot_spend": 2463.073349659783,
+        "status": "CLOSED",
+        "unknown_reasons": {}
+      },
+      "event_account_initial_cash": 10000,
+      "observed_complete": true,
+      "pressure_cash_max": 17.03403998097201,
+      "pressure_cash_min": 17.03403998097201,
+      "symbol": "BTCUSD_241227"
+    }
+  ],
+  "formal_validation_failures": 0,
+  "frozen_policies": 2,
+  "hashes": {
+    ".artifacts/dated-basis-event-panel-20261018/stage.py": "078d1586da9e0ab0056b81056e6bbdb9d04911eb86b3508ac2924c1912f53ec3",
+    ".artifacts/dated-basis-frozen-2024-20261018/bundle.json": "dc0cc9fb1babd8a3256e527b7a283eef24fa81e398536dddb4d39553691d623d",
+    "tools/dated_basis_dual_ledger.py": "30a5f44906d6bf955c7f0afe982f82af224d6a4bdf6cf22c2d7f5fec7cf19ec0",
+    "tools/dated_basis_event_panel.py": "05c89bc4b8371a740079d2e76137e62aaa46da6c293bc745dae5043a50d3a839",
+    "tools/dated_basis_opportunity_capacity.py": "e29d17da62918e447001fc2d2e0545b0a93595dc732cc130b247f29c641a6e4e",
+    "tools/test_dated_basis_event_panel.py": "13982390bcc10c3e3022b6b833fa3fd37b46272bf2fde9f8a5fb9297724ea6db"
+  },
+  "new_public_gets": 0,
+  "original_unknown_quarter_retained": true,
+  "protected_bindings": 7463,
+  "seconds": 98.42102558282204,
+  "summary": {
+    "absolute_support_events": 3,
+    "actual_execution_qualified": false,
+    "annual_return": null,
+    "candidate_qualified": false,
+    "central_increment_support_events": 1,
+    "continuous_account_status": "DATA_INSUFFICIENT_UNCHANGED",
+    "design": "INDEPENDENT_EVENT_PANEL",
+    "events_registered": 4,
+    "g4": false,
+    "independent_confirmation_attempts": 0,
+    "observed_complete_events": 3,
+    "statistical_independence_established": false,
+    "status": "NO_REPEATABLE_EVENT_SUPPORT",
+    "unknown_or_unclosed_events": 1
+  },
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 240
+  },
+  "training_vectors": 0
+}
