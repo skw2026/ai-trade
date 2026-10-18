@@ -1,0 +1,460 @@
+{
+  "account_requests": 0,
+  "audit_sha256": "7116aeacd2a7fdba004b4c1e7d4f9b0e7df0cae1edff1f41a3614c7d1b279671",
+  "capital_analyses": 1,
+  "cases": 288,
+  "cash_recalculations": 0,
+  "deployments": 0,
+  "formal_execution_failures": 0,
+  "full_path_validated": false,
+  "g4": false,
+  "independent_confirmation_events": 0,
+  "money_and_quantity_tolerance": "0",
+  "new_market_requests": 0,
+  "next": "Stop this fixed quote execution research. At most two hours and two named new mechanisms from existing evidence; select zero or one complete experiment.",
+  "orders": 0,
+  "original_bindings": 7774,
+  "original_execution_admitted": false,
+  "qualified_candidates": 0,
+  "ratio_absolute_tolerance": "1e-65",
+  "result_sha256": "85120afd3511bbe5244fb76e04bfc3c6e84d814be6dccea72da3b7aa037ba70b",
+  "schema": "linear_prefunded_tail_public_v1",
+  "skip": 0,
+  "terms": [
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "488.586869700",
+        "490.533838500"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2921.811127500",
+      "occupied_capital_range": [
+        "5370.4280981795100",
+        "5375.9033571956"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_UNSUPPORTED",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4624.0966428044",
+        "4629.5719018204900"
+      ],
+      "required_terminal_margin": "2921.811127500",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "-58.357650977831021392969505892819033768394300873084723224860843676511023645269882",
+        "-16.526198158533259451507479479248399462726602748175569535249336842824037345484052"
+      ],
+      "stress_cash_range": [
+        "-39.793570303265000000",
+        "-11.2690695606837500000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-47.976265042307563324176560121765601217655881256539246378082191780821917808219178",
+        "-19.451764299726313324176560121765601217655881256539246378082191780821917808219178"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-43.884917672786281662088280060882800608827940628269623189041095890410958904109589",
+        "-15.360416930205031662088280060882800608827940628269623189041095890410958904109589"
+      ],
+      "symbol": "BTCUSDT-23OCT26",
+      "terminal_headroom_range": [
+        "0E-9",
+        "4017.371310300"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "483.81933194000000000000000000000000000000",
+        "485.76820890000000000000000000000000000000"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2919.42831270000000000000000000000000000000",
+      "occupied_capital_range": [
+        "5368.04659497713800000000000000000000000000",
+        "5373.52292521040000000000000000000000000000"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_UNSUPPORTED",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4626.47707478960000000000000000000000000000",
+        "4631.95340502286200000000000000000000000000"
+      ],
+      "required_terminal_margin": "2919.42831270000000000000000000000000000000",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "-21.851835725805952162499854987314391681069208928810695593050723275937613871683423",
+        "-5.1915732509376589320874623801003923583769217158077965336984814610781097667512501"
+      ],
+      "stress_cash_range": [
+        "-37.41313831806500000000000000000000000000",
+        "-8.888637575483750000000000000000000000000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-57.958673505599972258532724505327245053265253119978409205479452054794520547945205",
+        "-29.434172763018722258532724505327245053265253119978409205479452054794520547945205"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-47.685905911832486129266362252663622526632626559989204602739726027397260273972603",
+        "-19.161405169251236129266362252663622526632626559989204602739726027397260273972603"
+      ],
+      "symbol": "BTCUSDT-30OCT26",
+      "terminal_headroom_range": [
+        "0E-38",
+        "4017.37321846000000000000000000000000000020"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "479.442359700",
+        "481.392988500"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2917.240702500",
+      "occupied_capital_range": [
+        "5365.8601889262600",
+        "5371.3375026206"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_UNSUPPORTED",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4628.6624973794",
+        "4634.1398110737400"
+      ],
+      "required_terminal_margin": "2917.240702500",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "-12.849556360741688037034205434065503618863629150071569486792534446024997716729801",
+        "-2.4450446750824222583497057371297003692779805973056164767122457050783513888981447"
+      ],
+      "stress_cash_range": [
+        "-35.227715728265000000",
+        "-6.7032149856837500000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-68.126329257890352132395738203957382039566625910194359013698630136986301369863014",
+        "-39.601828515309102132395738203957382039566625910194359013698630136986301369863014"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-51.677022493077676066197869101978691019783312955097179506849315068493150684931507",
+        "-23.152521750496426066197869101978691019783312955097179506849315068493150684931507"
+      ],
+      "symbol": "BTCUSDT-06NOV26",
+      "terminal_headroom_range": [
+        "0E-9",
+        "4017.374970300"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "464.517320100",
+        "466.473922500"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2909.781169500",
+      "occupied_capital_range": [
+        "5358.4047619548900",
+        "5363.8854291536"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_ONLY",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4636.1145708464",
+        "4641.5952380451100"
+      ],
+      "required_terminal_margin": "2909.781169500",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "-4.7693178699056692932182114876661921138444650121262646568286750901105770311452830",
+        "0.12858547440153239039619827305190542258199137806995985186421895867032153920412926"
+      ],
+      "stress_cash_range": [
+        "-27.775642261265000000",
+        "0.7488584813162500000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-97.661465816525823730751902587519025875183074247827008876712328767123287671232877",
+        "-69.136965073944573730751902587519025875183074247827008876712328767123287671232877"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-62.718554038895411865375951293759512937591537123913504438356164383561643835616438",
+        "-34.194053296314161865375951293759512937591537123913504438356164383561643835616438"
+      ],
+      "symbol": "BTCUSDT-27NOV26",
+      "terminal_headroom_range": [
+        "0E-9",
+        "4017.380943900"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "443.48174902000000000000000000000000000000",
+        "445.44677070000000000000000000000000000000"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2899.26759360000000000000000000000000000000",
+      "occupied_capital_range": [
+        "5347.89697315223900000000000000000000000000",
+        "5353.38236682950000000000000000000000000000"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_ONLY",
+      "original_execution_reasons": [
+        "PUBLICATION_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4646.61763317050000000000000000000000000000",
+        "4652.10302684776100000000000000000000000000"
+      ],
+      "required_terminal_margin": "2899.26759360000000000000000000000000000000",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "-1.7413420991798859716570493856968045274871166419156997214939997152996990846693721",
+        "1.1343669252877862948822511565998155757041616652851228532621730843362881559555626"
+      ],
+      "stress_cash_range": [
+        "-17.27257993716500000000000000000000000000",
+        "11.25192080541625000000000000000000000000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-136.30201093960714284532724505327245053271733489119815835616438356164383561643836",
+        "-107.77751019702589284532724505327245053271733489119815835616438356164383561643836"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-76.787295438386071422663622526636225266358667445599079178082191780821917808219178",
+        "-48.262794695804821422663622526636225266358667445599079178082191780821917808219178"
+      ],
+      "symbol": "BTCUSDT-25DEC26",
+      "terminal_headroom_range": [
+        "0E-38",
+        "4017.38936317999999999999999999999999999980"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "379.84055666000000000000000000000000000000",
+        "381.83105010000000000000000000000000000000"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2867.45973330000000000000000000000000000000",
+      "occupied_capital_range": [
+        "5316.10662118487200000000000000000000000000",
+        "5321.60631438980000000000000000000000000000"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_MARGIN",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4678.39368561020000000000000000000000000000",
+        "4683.89337881512800000000000000000000000000"
+      ],
+      "required_terminal_margin": "2867.45973330000000000000000000000000000000",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "0.62710102066131353211614122847359267260367954799311304419882332423261899436636468",
+        "1.8604431410673456303306625042122463896457333669601955788351773035460320963015992"
+      ],
+      "stress_cash_range": [
+        "14.50347250253500000000000000000000000000",
+        "43.02797324511625000000000000000000000000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-263.03023306675781487803957382039573820400274124103589479452054794520547945205479",
+        "-234.50573232417656487803957382039573820400274124103589479452054794520547945205479"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-124.26338028211140743901978691019786910200137062051794739726027397260273972602740",
+        "-95.73887953953015743901978691019786910200137062051794739726027397260273972602740"
+      ],
+      "symbol": "BTCUSDT-26MAR27",
+      "terminal_headroom_range": [
+        "0E-38",
+        "4017.41483494000000000000000000000000000020"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "324.882151500",
+        "326.894641500"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2839.991529000",
+      "occupied_capital_range": [
+        "5288.65353649534500",
+        "5294.16557829410"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_MARGIN",
+      "original_execution_reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4705.83442170590",
+        "4711.34646350465500"
+      ],
+      "required_terminal_margin": "2839.991529000",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "1.1584332815563435149448658436674726073734601444477989295071360209895801883387135",
+        "1.9462352714924517709960616596918889621310452447801396654827808601148854065135174"
+      ],
+      "stress_cash_range": [
+        "41.944208598235000000",
+        "70.4687093408162500000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-392.54823148653234074965601217656012176564634296383325260273972602739726027397260",
+        "-364.02373074395109074965601217656012176564634296383325260273972602739726027397260"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-175.30201144414867037482800608828006088282317148191662630136986301369863013698630",
+        "-146.77751070156742037482800608828006088282317148191662630136986301369863013698630"
+      ],
+      "symbol": "BTCUSDT-25JUN27",
+      "terminal_headroom_range": [
+        "0E-9",
+        "4017.436831500"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    },
+    {
+      "actual_margin_rule_certified": false,
+      "additional_margin_range": [
+        "247.18299898000000000000000000000000000000",
+        "249.22658730000000000000000000000000000000"
+      ],
+      "budget_ok": true,
+      "execution_admitted": false,
+      "fixed_margin": "2801.15750190000000000000000000000000000000",
+      "occupied_capital_range": [
+        "5249.84088521432600000000000000000000000000",
+        "5255.37038522120000000000000000000000000000"
+      ],
+      "original_cash_status": "LAST_KNOWN_CONDITIONAL_CASH_MARGIN",
+      "original_execution_reasons": [
+        "PUBLICATION_SKEW"
+      ],
+      "original_execution_status": "INPUT_INSUFFICIENT",
+      "path_validated": false,
+      "qualified": false,
+      "reference_terminal_nonnegative": true,
+      "reference_terminal_only": true,
+      "remaining_capital_range": [
+        "4744.62961477880000000000000000000000000000",
+        "4750.15911478567400000000000000000000000000"
+      ],
+      "required_terminal_margin": "2801.15750190000000000000000000000000000000",
+      "status": "REFERENCE_PREFUNDING_FEASIBLE",
+      "stress_break_even_simple_capital_rate_pct_range": [
+        "1.6462375360639340621115033827346156923132533724383990774708506950218391467453546",
+        "2.2278383759015758454279302132368787169863301497326077925936003618591618655646010"
+      ],
+      "stress_cash_range": [
+        "80.73940167113500000000000000000000000000",
+        "109.2639024137162500000000000000000000000"
+      ],
+      "stress_excess_occupied_12_range": [
+        "-507.79827823752697538686149162861491628619395749491208328767123287671232876712329",
+        "-479.27377749494572538686149162861491628619395749491208328767123287671232876712329"
+      ],
+      "stress_excess_occupied_6_range": [
+        "-213.52943828319598769343074581430745814309697874745604164383561643835616438356164",
+        "-185.00493754061473769343074581430745814309697874745604164383561643835616438356164"
+      ],
+      "symbol": "BTCUSDT-24SEP27",
+      "terminal_headroom_range": [
+        "0E-38",
+        "4017.46792981999999999999999999999999999980"
+      ],
+      "terminal_index_limit": "162141.10",
+      "zero_headroom_cases": 3
+    }
+  ],
+  "tests": 177
+}
