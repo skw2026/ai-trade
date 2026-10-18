@@ -1,0 +1,117 @@
+{
+  "account_requests": 0,
+  "audit_sha256": "8815406ea66e6b802639043df77d2621b9e05f398d55302940047203cbd87aec",
+  "book_messages": 3116,
+  "book_states": 9,
+  "cash_cases": 0,
+  "complete_audit_sha256": "f7c75bdb35216c4d9534e9aceefccd099664f65001c631634f076ec73d612f8e",
+  "concurrent_invocation_refused": 1,
+  "confirmation_events": 0,
+  "deployments": 0,
+  "documentation_reads": 4,
+  "economic_panels_attempted": 1,
+  "endpoint_mono_ms": 120000,
+  "endpoint_wall_ms": 1792342390544,
+  "formal_execution_failures": 1,
+  "failure_scope": "publication_precommit_whitespace_check",
+  "exact_reviewed_release_retries": 1,
+  "g4": false,
+  "market_cash_validation": "NOT_APPLICABLE_ZERO_CASES",
+  "next": "One separately registered same-T120 all-term last-known-depth conditional cash diagnosis; no new capture, no execution admission",
+  "orders": 0,
+  "original_bindings": 7698,
+  "public_get_invocations": 2,
+  "qualified": false,
+  "raw_records": 3143,
+  "raw_sha256": "9b78df8f190ff89b7e2cb5b5a7d13cf4fd03938c177258d8ff14e3a503ccad34",
+  "reconnects": 0,
+  "schema": "linear_depth_endpoint_public_v1",
+  "skip": 0,
+  "status": "INPUT_INSUFFICIENT",
+  "terms": [
+    {
+      "quote_age_ms": 2542,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-23OCT26"
+    },
+    {
+      "quote_age_ms": 1327,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-30OCT26"
+    },
+    {
+      "quote_age_ms": 5499,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-06NOV26"
+    },
+    {
+      "quote_age_ms": 3545,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-27NOV26"
+    },
+    {
+      "quote_age_ms": 710,
+      "reasons": [
+        "PUBLICATION_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-25DEC26"
+    },
+    {
+      "quote_age_ms": 5575,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-26MAR27"
+    },
+    {
+      "quote_age_ms": 6092,
+      "reasons": [
+        "future:STALE_PUBLICATION",
+        "future:STALE_RECEIVE",
+        "PUBLICATION_SKEW",
+        "RECEIVE_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-25JUN27"
+    },
+    {
+      "quote_age_ms": 827,
+      "reasons": [
+        "PUBLICATION_SKEW"
+      ],
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-24SEP27"
+    }
+  ],
+  "tests": 155,
+  "websocket_attempts": 2
+}
