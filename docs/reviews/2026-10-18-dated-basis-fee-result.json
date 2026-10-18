@@ -1,0 +1,72 @@
+{
+  "account_reads": 0,
+  "actual_fee_entitlement": "UNKNOWN",
+  "assumptions": [
+    "unchanged central prices and three market slippages",
+    "spot fee 7.5bps each side conditional on discount",
+    "6 percent annual capital charge excluding spot fee financing",
+    "nonnegative futures fees; relaxed to zero for floor",
+    "BNB acquisition and holding costs relaxed to zero"
+  ],
+  "background_wait": false,
+  "current_coin_m_rate": "UNKNOWN_PUBLIC_TABLE_EMPTY",
+  "economic_attempts": 0,
+  "g4": false,
+  "historical_fee_binding": "UNKNOWN",
+  "new_market_gets": 0,
+  "policy_changed": false,
+  "protected_files": 6570,
+  "quarters": {
+    "BTCUSD_230331": {
+      "all_in_cost_floor_bps": "32.42394434227757172712129408768119648827",
+      "capital_floor_bps": "11.47823720544795205742513235523955388128",
+      "equal_is_not_positive_advantage": false,
+      "fee_budget_bps": "-24.18582967154463725742513235523955388128",
+      "floor_exceeds_budget": true,
+      "gross_capacity_bps": "-6.7224823649012252",
+      "maximum_spot_rate_for_nonnegative_budget": "-0.001212476494785127687895214586173560157200",
+      "required_cost_or_gross_improvement_bps": "39.14642670717879692712129408768119648827",
+      "slippage_bps": "5.985110101195460",
+      "spot_fee_floor_bps": "14.96059703563415966969616173244164260698"
+    },
+    "BTCUSD_230630": {
+      "all_in_cost_floor_bps": "32.47324922385325969419147670187123527664",
+      "capital_floor_bps": "11.48282630272707306466332949712340319635",
+      "equal_is_not_positive_advantage": false,
+      "fee_budget_bps": "14.05711247929274373533667050287659680365",
+      "floor_exceeds_budget": true,
+      "gross_capacity_bps": "31.535093834138024",
+      "maximum_spot_rate_for_nonnegative_budget": "0.0007030774275969652999812084833270376792730",
+      "required_cost_or_gross_improvement_bps": "0.938155389715235694191476701871235276640",
+      "slippage_bps": "5.9951550521182072",
+      "spot_fee_floor_bps": "14.99526786900797942952814720474783208029"
+    },
+    "BTCUSD_230929": {
+      "all_in_cost_floor_bps": "32.53208442508088863362913875766122014054",
+      "capital_floor_bps": "11.50393830629072143968607327671232876712",
+      "equal_is_not_positive_advantage": false,
+      "fee_budget_bps": "13.16804090709557376031392672328767123288",
+      "floor_exceeds_budget": true,
+      "gross_capacity_bps": "30.677973770132668",
+      "maximum_spot_rate_for_nonnegative_budget": "0.0006574311701977014389929343448356657956386",
+      "required_cost_or_gross_improvement_bps": "1.854110654948220633629138757661220140536",
+      "slippage_bps": "6.0059945567463728",
+      "spot_fee_floor_bps": "15.02215156204379439394306548094889137341"
+    },
+    "BTCUSD_231229": {
+      "all_in_cost_floor_bps": "32.37349082607388123936606034998841201151",
+      "capital_floor_bps": "11.45434517126920442793343984931506849315",
+      "equal_is_not_positive_advantage": false,
+      "fee_budget_bps": "-6.202389669379380027933439849315068493152",
+      "floor_exceeds_budget": true,
+      "gross_capacity_bps": "11.2281948897725668",
+      "maximum_spot_rate_for_nonnegative_budget": "-0.0003113043854348388640014653278649277871839",
+      "required_cost_or_gross_improvement_bps": "21.14529593630131443936606034998841201151",
+      "slippage_bps": "5.9762393878827424",
+      "spot_fee_floor_bps": "14.94290626692193441143262050067334351836"
+    }
+  },
+  "source_sha256": "aa3ec1e2c1026c0482982c1018b3e9adf76bedd374745ddc254a48dad3ba8537",
+  "status": "COST_FLOOR_EXCEEDS_FROZEN_CENTRAL_GROSS",
+  "web_operations": 20
+}
