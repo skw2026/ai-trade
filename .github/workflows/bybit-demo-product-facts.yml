@@ -1,0 +1,107 @@
+name: Bybit Demo Product Facts Readonly
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact reviewed source SHA; three Demo GETs only
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bybit-demo-readonly-evidence
+  cancel-in-progress: false
+
+jobs:
+  facts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bind source and run offline checks
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${EXPECTED_SHA}" == "${GITHUB_SHA}" ]]
+          python3 tools/test_inspect_bybit_demo_product_facts.py
+          python3 tools/test_audit_bybit_readonly_evidence.py
+      - name: Three read-only Demo requests on existing ECS
+        env:
+          FACTS_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "${FACTS_RUN_ID}" =~ ^[0-9]+-1$ ]]
+          [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ ]]
+          [[ "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "${ECS_PORT}" =~ ^[0-9]+$ ]]
+          [[ "${ECS_FINGERPRINT}" =~ ^SHA256:[a-zA-Z0-9+/]{43}$ ]]
+          KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/demo-facts-XXXXXX")"
+          trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
+          printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
+          sed -i 's/\r$//' "${KEY_DIR}/key"
+          ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null
+          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" 2>/dev/null |
+            while IFS= read -r host_key; do
+              observed="$(printf '%s\n' "${host_key}" | ssh-keygen -lf - | awk '{print $2}')"
+              if [[ "${observed}" == "${ECS_FINGERPRINT}" ]]; then
+                printf '%s\n' "${host_key}"
+              fi
+            done > "${KEY_DIR}/known_hosts"
+          test -s "${KEY_DIR}/known_hosts"
+          ssh_options=(-i "${KEY_DIR}/key" -p "${ECS_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no -o ConnectTimeout=20)
+          collector_sha="$(sha256sum tools/inspect_bybit_demo_product_facts.py | cut -d ' ' -f 1)"
+          base_sha="$(sha256sum tools/audit_bybit_readonly_evidence.py | cut -d ' ' -f 1)"
+          mkdir -p .artifacts
+          tar -czf .artifacts/demo-facts-runner.tar.gz tools/inspect_bybit_demo_product_facts.py tools/audit_bybit_readonly_evidence.py
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
+            "umask 077; mkdir -p /opt/ai-trade/data/research/demo_product_facts_runner && mkdir /opt/ai-trade/data/research/demo_product_facts_runner/${FACTS_RUN_ID} && tar -xzf - -C /opt/ai-trade/data/research/demo_product_facts_runner/${FACTS_RUN_ID}" \
+            < .artifacts/demo-facts-runner.tar.gz
+          remote_exit=0
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- ${FACTS_RUN_ID} ${collector_sha} ${base_sha}" \
+            > .artifacts/demo-product-facts.json <<'REMOTE' || remote_exit=$?
+          set -euo pipefail
+          umask 077
+          export PYTHONDONTWRITEBYTECODE=1
+          run_id="$1"
+          collector_sha="$2"
+          base_sha="$3"
+          runner="/opt/ai-trade/data/research/demo_product_facts_runner/${run_id}/tools"
+          printf '%s  %s\n' "${collector_sha}" "${runner}/inspect_bybit_demo_product_facts.py" | sha256sum -c - >/dev/null
+          printf '%s  %s\n' "${base_sha}" "${runner}/audit_bybit_readonly_evidence.py" | sha256sum -c - >/dev/null
+          python3 "${runner}/inspect_bybit_demo_product_facts.py" \
+            --root "/opt/ai-trade/data/research/demo_product_facts_private/${run_id}" \
+            --env-file /opt/ai-trade/.env.runtime
+          REMOTE
+          FACTS_COLLECTOR_SHA="${collector_sha}" FACTS_BASE_SHA="${base_sha}" python3 - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path('.artifacts/demo-product-facts.json')
+          assert 0 < p.stat().st_size < 16384
+          r = json.loads(p.read_text())
+          assert r.get('schema_version') == 'bybit_demo_product_facts_v1'
+          assert r.get('order_submission') is False and r.get('account_mutation') is False
+          assert r.get('balances_published') is False
+          if r.get('status') == 'READONLY_FACTS_OBSERVED':
+              assert r['collector_sha256'] == os.environ['FACTS_COLLECTOR_SHA']
+              assert r['base_sha256'] == os.environ['FACTS_BASE_SHA']
+              assert r['response_pages'] == 3
+          text = json.dumps(r, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::notice title=Bybit Demo product facts::' + text)
+          assert r.get('status') == 'READONLY_FACTS_OBSERVED'
+          PY
+          [[ "${remote_exit}" == 0 ]]
+      # No raw archive/artifact upload; no deploy, docker or account writes.
