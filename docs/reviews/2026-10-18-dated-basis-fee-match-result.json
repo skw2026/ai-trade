@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "stage": "dated-basis-fee-match-20261018",
+  "summary": {
+    "actual_execution_qualified": false,
+    "causal_entry_policy": false,
+    "comparisons": 12,
+    "confirmation_attempts": 0,
+    "economic_attempts": 0,
+    "g4": false,
+    "orders": 0,
+    "status": "FEE_MATCH_IDENTITY_VERIFIED",
+    "strict_zero_exposure": false,
+    "synthetic_paths": 24,
+    "unconditional_profit_improvement": false
+  },
+  "comparisons": [
+    {
+      "equity_difference_usdt": "-1.20740000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "25000"
+    },
+    {
+      "equity_difference_usdt": "0.04010000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "50000"
+    },
+    {
+      "equity_difference_usdt": "2.53510000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "100000"
+    },
+    {
+      "equity_difference_usdt": "-1.20500000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "25000"
+    },
+    {
+      "equity_difference_usdt": "0.04000000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "50000"
+    },
+    {
+      "equity_difference_usdt": "2.53000000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          25,
+          50000
+        ]
+      ],
+      "terminal_price": "100000"
+    },
+    {
+      "equity_difference_usdt": "-1.20740000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "25000"
+    },
+    {
+      "equity_difference_usdt": "0.04010000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "50000"
+    },
+    {
+      "equity_difference_usdt": "2.53510000000",
+      "fee_asset": "USDT",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "100000"
+    },
+    {
+      "equity_difference_usdt": "-1.20500000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "25000"
+    },
+    {
+      "equity_difference_usdt": "0.04000000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "50000"
+    },
+    {
+      "equity_difference_usdt": "2.53000000000",
+      "fee_asset": "BTC",
+      "fill_spec": [
+        [
+          10,
+          40000
+        ],
+        [
+          15,
+          60000
+        ]
+      ],
+      "terminal_price": "100000"
+    }
+  ],
+  "freeze": {
+    "hashes": {
+      ".artifacts/dated-basis-execution-bridge-20261018/metadata/future-selected.json": "de3eb1c9e7921a27e9f5ca910890f76c5ea564e43c41a5f4f4fead383c948eec",
+      ".artifacts/dated-basis-execution-bridge-20261018/metadata/spot-selected.json": "6dfa3974bd3296b32800a3d694f91b1a333c87e41023654baedcff31ed9b5f8a",
+      ".artifacts/dated-basis-fee-match-20261018/scope.json": "60cd37231dc0888ca5bcbedfb11d226eaee8e70539eb80e442b28e069a5901eb",
+      ".artifacts/dated-basis-fee-match-20261018/stage.py": "fe6b013c38d2ba5f01d4e08de77dc47a5072a58ebb38088c7941e2d7b0db454f",
+      "tools/dated_basis_execution_bridge.py": "b4a1186885cd26677f11b8b8e631253670b4455960869b2679fffd2dc30dc93f",
+      "tools/dated_basis_fee_match.py": "4bca24e63f4181588fef4a1b8b09cc532a055a2e3247ef381adb4e014ee01a9c",
+      "tools/test_dated_basis_fee_match.py": "3b8275b852ace11ed77d4e8d27892b046a0ec47d60865b6cca6b22ab6dcd82c1"
+    }
+  },
+  "engineering": {
+    "tests": 333,
+    "new_tests": 24,
+    "prior_tests": 309,
+    "skips": 0,
+    "formal_failures": 0,
+    "protected_bindings": 7516,
+    "user_drafts_preserved": 6
+  },
+  "resources": {
+    "synthetic_attempts": 1,
+    "network": 0,
+    "new_market_data": 0,
+    "economic_attempts": 0,
+    "training": 0,
+    "accounts": 0,
+    "orders": 0,
+    "production_changes": 0,
+    "deployments": 0
+  },
+  "findings": {
+    "identity": "net_spot = sum(face_j/entry_price_j) + sum(actual_entry_fee_btc_j); terminal_wallet = total_face*(1-exit_fee)/exit_price + rounding_residual",
+    "cost_not_eliminated": true,
+    "requires_confirmed_fills": true,
+    "cannot_resize_earlier_leg_with_future_fill": true,
+    "synthetic_sizing_not_causal_policy": true,
+    "actual_fee_schedule": "UNKNOWN",
+    "collateral_ready": "UNKNOWN",
+    "independent_events": "NOT_ADMITTED",
+    "eligible_candidates": 0,
+    "operator_demo_entry_ban": "UNCHANGED"
+  }
+}
