@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "stage": "dated-basis-execution-bridge-20261018",
+  "summary": {
+    "actual_execution_qualified": false,
+    "capture_failure": null,
+    "cases": 1428,
+    "confirmation_attempts": 0,
+    "g4": false,
+    "status": "DISPLAYED_EXECUTION_SENSITIVITY_MEASURED",
+    "statuses": {
+      "DISPLAYED_BOTH_LEGS": 934,
+      "INITIAL_UNAVAILABLE": 12,
+      "RIGHT_CENSORED": 4,
+      "SECOND_LEG_UNAVAILABLE": 478
+    },
+    "strategy_entries": 0,
+    "ticks": 119
+  },
+  "groups": [
+    {
+      "added_delay_cost": {
+        "max": "0E-65",
+        "min": "0E-65"
+      },
+      "delay_ms": 0,
+      "fee_asset": "USDT",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009842217442647119443844976879411643465251222712",
+        "min": "2.61385205577934056218949577331719004832055998E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "1.0285767626763365030539800982882795827740210565363",
+        "min": "-0.51814919699903539336897016915946321170785219347418"
+      },
+      "delay_ms": 250,
+      "fee_asset": "USDT",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000012855021689974088487330531913861203575206467203",
+        "min": "-0.000011109263331667900545702757932383428822198638721"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0E-65",
+        "min": "0E-65"
+      },
+      "delay_ms": 1000,
+      "fee_asset": "USDT",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000006820354776869130529738649324176757504428644228",
+        "min": "0.000006820354776869130529738649324176757504428644228"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 1,
+        "INITIAL_UNAVAILABLE": 1,
+        "RIGHT_CENSORED": 1,
+        "SECOND_LEG_UNAVAILABLE": 116
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0E-65",
+        "min": "0E-65"
+      },
+      "delay_ms": 0,
+      "fee_asset": "BTC",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009556851410770952759021723031949634226582853203",
+        "min": "1.29500393930675484886779832206169597777963919E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "1.0285767626763365030539800982882795827740210565363",
+        "min": "-0.51814919699903539336897016915946321170785219347418"
+      },
+      "delay_ms": 250,
+      "fee_asset": "BTC",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000012055021689974088487330531913861203575206467203",
+        "min": "-0.000011989263331667900545702757932383428822198638721"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0E-65",
+        "min": "0E-65"
+      },
+      "delay_ms": 1000,
+      "fee_asset": "BTC",
+      "order": "SPOT_FIRST",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000006020354776869130529738649324176757504428644228",
+        "min": "0.000006020354776869130529738649324176757504428644228"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 1,
+        "INITIAL_UNAVAILABLE": 1,
+        "RIGHT_CENSORED": 1,
+        "SECOND_LEG_UNAVAILABLE": 116
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0E-19",
+        "min": "0E-19"
+      },
+      "delay_ms": 0,
+      "fee_asset": "USDT",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009842217442647119443844976879411643465251222712",
+        "min": "2.61385205577934056218949577331719004832055998E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0.29630011740000000000000000000000000000000000000323",
+        "min": "-1.1987571288000000000"
+      },
+      "delay_ms": 250,
+      "fee_asset": "USDT",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009842217442647119443844976879411643465251222712",
+        "min": "2.61385205577934056218949577331719004832055998E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 112,
+        "INITIAL_UNAVAILABLE": 1,
+        "SECOND_LEG_UNAVAILABLE": 6
+      }
+    },
+    {
+      "added_delay_cost": null,
+      "delay_ms": 1000,
+      "fee_asset": "USDT",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": null,
+      "statuses": {
+        "INITIAL_UNAVAILABLE": 1,
+        "RIGHT_CENSORED": 1,
+        "SECOND_LEG_UNAVAILABLE": 117
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0E-16",
+        "min": "0E-16"
+      },
+      "delay_ms": 0,
+      "fee_asset": "BTC",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009556851410770952759021723031949634226582853203",
+        "min": "1.29500393930675484886779832206169597777963919E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 118,
+        "INITIAL_UNAVAILABLE": 1
+      }
+    },
+    {
+      "added_delay_cost": {
+        "max": "0.29630990000000000000000000000000000000000000001690",
+        "min": "-1.1987272000000000"
+      },
+      "delay_ms": 250,
+      "fee_asset": "BTC",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": {
+        "max": "0.000009556851410770952759021723031949634226582853203",
+        "min": "1.29500393930675484886779832206169597777963919E-7"
+      },
+      "statuses": {
+        "DISPLAYED_BOTH_LEGS": 112,
+        "INITIAL_UNAVAILABLE": 1,
+        "SECOND_LEG_UNAVAILABLE": 6
+      }
+    },
+    {
+      "added_delay_cost": null,
+      "delay_ms": 1000,
+      "fee_asset": "BTC",
+      "order": "FUTURE_FIRST_PREFUNDED_ONLY",
+      "registered": 119,
+      "residual_before_fee": null,
+      "statuses": {
+        "INITIAL_UNAVAILABLE": 1,
+        "RIGHT_CENSORED": 1,
+        "SECOND_LEG_UNAVAILABLE": 117
+      }
+    }
+  ],
+  "metadata_semantics": {
+    "account_permission_verified": false,
+    "contracts": "25",
+    "dynamic_filters_verified": false,
+    "face_per_contract": "100",
+    "future_step": "1",
+    "metadata_capture_time_binding": "NOT_ATTESTED",
+    "spot_step": "0.00001000"
+  },
+  "independent_audit": {
+    "complete_cases": 934,
+    "displayed_leg_bounds": 1868,
+    "displayed_unwinds": 478,
+    "g4": false,
+    "registered_cases": 1428,
+    "status": "RAW_BOOK_DISPOSITIONS_AND_ARITHMETIC_MATCH",
+    "strategy_trades": 0
+  },
+  "input_and_source_freeze": {
+    "hashes": {
+      ".artifacts/dated-basis-execution-bridge-20261018/metadata/future-selected.json": "de3eb1c9e7921a27e9f5ca910890f76c5ea564e43c41a5f4f4fead383c948eec",
+      ".artifacts/dated-basis-execution-bridge-20261018/metadata/spot-selected.json": "6dfa3974bd3296b32800a3d694f91b1a333c87e41023654baedcff31ed9b5f8a",
+      ".artifacts/dated-basis-execution-bridge-20261018/scope.json": "e014e11bcffa49d11d29610b5eb276b691f5acd9b2ce4d4d7b326c91d2eca078",
+      ".artifacts/dated-basis-execution-bridge-20261018/stage.py": "ca312e1c0cdc6dc62f7da41e33042dda125bdbf37a7c0ab93e1d9d49e709f26d",
+      ".artifacts/dated-basis-quotes-20261018/capture/frames.jsonl": "bf60e500702726d7824e02a50dd58011c66a4e23b67631209953af0fde379296",
+      ".artifacts/dated-basis-quotes-20261018/capture/receipt.json": "e23b913d05e3dab197a82fc0fbc5c293e2b7253b40deca99ff46be267a038dbb",
+      "tools/analyze_dated_basis_execution.py": "dd0f44f960f01769d82b23b29526e60b4944a204e2629804584afb8d4f326a8c",
+      "tools/analyze_dated_basis_quotes.py": "e9db4ff7216e128418860064b0e191b955268bf37fd4ad42d0482beb252c4c0f",
+      "tools/audit_dated_basis_execution.py": "3edf512cc7c9e2d8a0b76ddb121c8744b638e9efb4bea565ab3a37a21b7133d7",
+      "tools/dated_basis_execution_bridge.py": "b4a1186885cd26677f11b8b8e631253670b4455960869b2679fffd2dc30dc93f",
+      "tools/dated_basis_known_depth.py": "66b01bb9e901d04a46132c9a5954121996fc168135f317aba15de79c653a82c4",
+      "tools/test_dated_basis_execution_bridge.py": "b2a96228ffb25893118d6287c9dc6c4a45400ed962b0f84fc826fee96ac51a17"
+    }
+  },
+  "engineering": {
+    "regression_tests": 309,
+    "new_tests": 69,
+    "prior_tests": 240,
+    "skips": 0,
+    "formal_failures": 1,
+    "original_command_retries": 1,
+    "final_result": "PASS",
+    "protected_bindings": 7484,
+    "user_drafts_preserved": 6,
+    "production_adapter": "NOT_IMPLEMENTED",
+    "production_ledger": "INCOMPATIBLE_SPOT_INVERSE",
+    "research_ledger": "OFFLINE_ONLY"
+  },
+  "resources": {
+    "public_metadata_gets": 2,
+    "official_document_reads": 5,
+    "new_market_captures": 0,
+    "economic_attempts": 0,
+    "diagnostic_attempts": 1,
+    "training": 0,
+    "accounts": 0,
+    "orders": 0,
+    "deployments": 0
+  },
+  "qualification": {
+    "g4": false,
+    "candidate_count": 0,
+    "independent_confirmation_attempts": 0,
+    "actual_fees": "UNKNOWN",
+    "collateral_transfer_latency": "UNKNOWN",
+    "operator_demo_entry_ban": "UNCHANGED"
+  },
+  "interpretation": {
+    "second_leg_unavailable_reason": "ALL_EVENT_SKEW_NOT_VENUE_REJECTION",
+    "spot_buy_usdt_fee": "LEGACY_RESEARCH_COUNTERFACTUAL",
+    "no_new_alpha_or_profit_evidence": true,
+    "all_934_after_future_entry_fee_residuals_negative": true,
+    "after_fee_residual_btc": {
+      "min": "-0.000042380372594999568446248460690315812251020837359721",
+      "max": "-0.000017472123288335937424182137554224935221218326329797"
+    }
+  },
+  "production_sources": [
+    "src/exchange/binance_exchange_adapter.cpp",
+    "src/core/types.h",
+    "src/execution/execution_engine.cpp",
+    "src/oms/account_state.cpp"
+  ],
+  "sources": [
+    "https://raw.githubusercontent.com/binance/binance-spot-api-docs/master/filters.md",
+    "https://raw.githubusercontent.com/binance/binance-spot-api-docs/master/faqs/commission_faq.md",
+    "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/market-data"
+  ]
+}
