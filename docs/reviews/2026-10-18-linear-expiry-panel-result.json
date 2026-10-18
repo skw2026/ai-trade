@@ -1,0 +1,129 @@
+{
+  "account_requests": 0,
+  "actual_fills": false,
+  "attempts": 1,
+  "audit_sha256": "7ad0a21f0afedc3d1e5e7a2ed029539eed837067086b0d96565b98c6109a8b32",
+  "auxiliary_display_failure": "Syntax error outside validation; no capture/model rerun",
+  "calculated_cases": 36,
+  "captured_utc": "2026-10-18T16:27:51.377976+00:00",
+  "costs": {
+    "base": [
+      "0.001",
+      "0.00055",
+      "0.0002"
+    ],
+    "stress": [
+      "0.002",
+      "0.001",
+      "0.001"
+    ]
+  },
+  "deployments": 0,
+  "economic_confirmation": false,
+  "eligible_terms": 1,
+  "formal_validation_failures": 0,
+  "freeze_sha256": "8489ac56ed06e7f7f9466bcbeb9cc378456a9b6fef34ae299845459c36a3d086",
+  "full_margin_path_validated": false,
+  "g4": false,
+  "independent_confirmation_attempts": 0,
+  "next": "One fixed 120-second all-term public WS observability diagnostic; no economic time selection",
+  "official_reads": 12,
+  "orders": 0,
+  "originals_preserved": 7600,
+  "planned_max_cases": 288,
+  "pre_price_revision": true,
+  "public_gets": 11,
+  "public_term_summary": [
+    {
+      "cases": 0,
+      "event_skew_ms": 1932,
+      "exchange_age_ms": 1961,
+      "receive_age_ms": 2040,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-23OCT26"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 5330,
+      "exchange_age_ms": 5366,
+      "receive_age_ms": 5445,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-30OCT26"
+    },
+    {
+      "base_cash": [
+        "-18.9593053892175000000",
+        "7.8171094545375000000"
+      ],
+      "cases": 36,
+      "days": "18.6473247106481481481481481481481481481481481481481481481481",
+      "event_skew_ms": 500,
+      "exchange_age_ms": 595,
+      "margin_failure_cases": 12,
+      "mid": "81229.25",
+      "occupied_range": [
+        "4896.1362306683400",
+        "4899.6697655753"
+      ],
+      "q": "0.03",
+      "receive_age_ms": 685,
+      "status": "CONDITIONAL_ONLY",
+      "stress_cash": [
+        "-35.144055771575000000",
+        "-6.5637167712312500000"
+      ],
+      "stress_excess6": [
+        "-50.16308038970561549711092085235920852359",
+        "-21.58274138936186549711092085235920852359"
+      ],
+      "symbol": "BTCUSDT-06NOV26"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 5313,
+      "exchange_age_ms": 5354,
+      "receive_age_ms": 5438,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-27NOV26"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 849,
+      "exchange_age_ms": 899,
+      "receive_age_ms": 978,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-25DEC26"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 3188,
+      "exchange_age_ms": 3197,
+      "receive_age_ms": 3274,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-26MAR27"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 1725,
+      "exchange_age_ms": 1795,
+      "receive_age_ms": 1880,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-25JUN27"
+    },
+    {
+      "cases": 0,
+      "event_skew_ms": 1446,
+      "exchange_age_ms": 1495,
+      "receive_age_ms": 1576,
+      "status": "INPUT_INSUFFICIENT",
+      "symbol": "BTCUSDT-24SEP27"
+    }
+  ],
+  "qualified_candidates": 0,
+  "schema": "linear_expiry_panel_public_v1",
+  "source_sha256": "158b953e8c47eb260308c9408fa6cb95422fb4d965100a36279e5c770a2b15ca",
+  "status": "PARTIAL_INPUTS_NO_STRESS_CASH_SUPPORT",
+  "terms": 8,
+  "test_skips": 0,
+  "tests": 85
+}
