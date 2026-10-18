@@ -1,0 +1,40 @@
+{
+  "account_access": 0,
+  "actual_execution_qualified": false,
+  "candidate_qualified": false,
+  "confirmed_cause": "All 31 best known bids fell below initial snapshot floor; old sweep discarded their accepted absolute updates",
+  "deployments": 0,
+  "event_skew_rejections": 1,
+  "fix_scope": "Separate diagnostic accepts only snapshot or sequence-accepted explicit levels; reports conservative displayed price bound, not exact complete-book VWAP",
+  "fixed_old_ticks": 119,
+  "formerly_rejected_with_provenance_bound": 31,
+  "g4": false,
+  "independent_decimal_sweeps": 238,
+  "market_requests": 0,
+  "old_initial_region_exit_pairs": 87,
+  "old_initial_region_rejections": 31,
+  "orders": 0,
+  "paired_displayed_exit_bounds": 118,
+  "payoff_attempts": 0,
+  "source_hashes": {
+    ".artifacts/dated-basis-observability-20261018/boundary-diagnosis.json": "a585f32054b97a68ac52eb7e408751efe056491db93ebf03bd972c17c4fbfa95",
+    ".artifacts/dated-basis-observability-20261018/boundary_diagnosis.py": "415468a8c85124f55d58d7f05f3a617455675f6755490c8f0bb5689da7d7ba30",
+    ".artifacts/dated-basis-observability-20261018/extension.py": "25c1875b2efcfb94b467e8d188d3288fd67f0c4321e789d84e66ac8947c1b103",
+    "tools/dated_basis_known_depth.py": "66b01bb9e901d04a46132c9a5954121996fc168135f317aba15de79c653a82c4",
+    "tools/test_dated_basis_known_depth.py": "793a4236c77aee550e29e1e568725caa1a5ed1b11628dc66c176c0c137540026"
+  },
+  "status": "KNOWN_LEVEL_BOUNDS_VALIDATED_NOT_EXECUTION_PROOF",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 149
+  },
+  "unchanged": [
+    "Old source/results/gates",
+    "Historical economic withdrawal",
+    "Demo operator reduce-only",
+    "G4 and independent confirmation"
+  ]
+}

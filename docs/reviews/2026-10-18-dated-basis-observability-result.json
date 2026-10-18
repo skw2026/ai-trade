@@ -1,0 +1,145 @@
+{
+  "accounts": 0,
+  "candidate_qualified": false,
+  "current_capture": {
+    "entry": {
+      "actual_execution_qualified": false,
+      "displayed_pair_observed": 118,
+      "has_actual_position": false,
+      "insufficient_depth": 0,
+      "skew_rejected": 1,
+      "ticks": 119
+    },
+    "exit": {
+      "actual_execution_qualified": false,
+      "displayed_pair_observed": 87,
+      "has_actual_position": false,
+      "insufficient_depth": 31,
+      "skew_rejected": 1,
+      "ticks": 119
+    }
+  },
+  "current_capture_has_mark": false,
+  "current_capture_usable_as_2023_evidence": false,
+  "deployments": 0,
+  "formal_failures": 0,
+  "g4": false,
+  "historical_three_bar_evidence": {
+    "1680416700000": {
+      "actual_execution_qualified": false,
+      "available_ms": 1680417000000,
+      "executable_quotes": {
+        "displayed_depth_covers_request": null,
+        "status": "NOT_CAPTURED"
+      },
+      "future_mark_range": {
+        "price_range_observed": true,
+        "status": "MARK_RANGE_OBSERVED",
+        "trades": "NOT_APPLICABLE"
+      },
+      "future_trades": {
+        "price_range_observed": true,
+        "status": "TRADE_RANGE_OBSERVED",
+        "trades": "POSITIVE_RECORDED"
+      },
+      "orders_authorized": false,
+      "recovery_authorized": false,
+      "spot_trade_range": {
+        "price_range_observed": true,
+        "status": "TRADE_RANGE_OBSERVED",
+        "trades": "POSITIVE_RECORDED"
+      }
+    },
+    "1680417000000": {
+      "actual_execution_qualified": false,
+      "available_ms": 1680417300000,
+      "executable_quotes": {
+        "displayed_depth_covers_request": null,
+        "status": "NOT_CAPTURED"
+      },
+      "future_mark_range": {
+        "price_range_observed": true,
+        "status": "MARK_RANGE_OBSERVED",
+        "trades": "NOT_APPLICABLE"
+      },
+      "future_trades": {
+        "price_range_observed": false,
+        "status": "COMPLETE_QUIET_CANDLE",
+        "trades": "ZERO_RECORDED"
+      },
+      "orders_authorized": false,
+      "recovery_authorized": false,
+      "spot_trade_range": {
+        "price_range_observed": true,
+        "status": "TRADE_RANGE_OBSERVED",
+        "trades": "POSITIVE_RECORDED"
+      }
+    },
+    "1680417300000": {
+      "actual_execution_qualified": false,
+      "available_ms": 1680417600000,
+      "executable_quotes": {
+        "displayed_depth_covers_request": null,
+        "status": "NOT_CAPTURED"
+      },
+      "future_mark_range": {
+        "price_range_observed": true,
+        "status": "MARK_RANGE_OBSERVED",
+        "trades": "NOT_APPLICABLE"
+      },
+      "future_trades": {
+        "price_range_observed": true,
+        "status": "TRADE_RANGE_OBSERVED",
+        "trades": "POSITIVE_RECORDED"
+      },
+      "orders_authorized": false,
+      "recovery_authorized": false,
+      "spot_trade_range": {
+        "price_range_observed": true,
+        "status": "TRADE_RANGE_OBSERVED",
+        "trades": "POSITIVE_RECORDED"
+      }
+    }
+  },
+  "limitations": [
+    "Quiet trades do not identify resting depth",
+    "Active trades do not identify resting depth",
+    "Displayed depth is not guaranteed fill or synchronized two-leg execution",
+    "No exchange clock-offset proof",
+    "Newer book observations cannot recover 2023 executable history"
+  ],
+  "new_market_requests": 0,
+  "next_scope": "Define conditional historical development separately from quote/size/latency execution evidence; no accepted second payoff batch or automatic long wait",
+  "official_document_reads": 7,
+  "official_sources": [
+    {
+      "sections": [
+        "Kline/Candlestick Data",
+        "Mark Price Kline/Candlestick Data",
+        "Order Book"
+      ],
+      "supports": "Trade volume/count, mark OHLC, and book bid/ask levels are distinct response fields; no historical executable-liquidity proof is implied",
+      "url": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/market-data"
+    }
+  ],
+  "operator_reduce_only_unchanged": true,
+  "orders": 0,
+  "payoff_attempts": 0,
+  "prior_development_status": "DATA_INSUFFICIENT",
+  "protected_bindings": 7041,
+  "source_hashes": {
+    ".artifacts/dated-basis-observability-20261018/scope.json": "0e422350d8984b3917a4a3c91ad2797b714310d65ce7bc80a8a85e58b5d6aea3",
+    ".artifacts/dated-basis-observability-20261018/stage.py": "c87f83f3bd4624fc8b5c77e50092644c4820ad55a5709ff397d352cd8fb67e61",
+    "tools/dated_basis_observability.py": "e3c91d5233c3e62d08dbda16c04d16bee256077bf944bd22c779715dac69f183",
+    "tools/test_dated_basis_observability.py": "38f87b2b996b8ae2e8ce89bf4991e8ddb84cf1ffaf34914a68cbea8c72007394"
+  },
+  "status": "OBSERVABILITY_SEPARATED_HISTORICAL_EXECUTION_STILL_UNKNOWN",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 128
+  },
+  "training_vectors": 0
+}
