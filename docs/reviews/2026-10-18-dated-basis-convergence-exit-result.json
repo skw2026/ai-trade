@@ -1,0 +1,3944 @@
+{
+  "actual_execution_qualified": false,
+  "audit": {
+    "actual_execution_qualified": false,
+    "closed_ledgers": 108,
+    "g4": false,
+    "independent_intention_scans": 4,
+    "post_settlement_bars": 0,
+    "quarter_paths": 144,
+    "risk_bars": 2052900,
+    "scenarios": 36,
+    "status": "DECIMAL_RECONSTRUCTION_MATCH"
+  },
+  "calculation_seconds": 40.96543329185806,
+  "capital_time_improvement_count": 36,
+  "cash_improvement_count": 36,
+  "central": [
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 58.0083117024738,
+        "0.12": 86.79075837387165
+      },
+      "capital_time_reduction": 0.26359435137390996,
+      "cash_delta": 29.225865031075955,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 76.17526085631471,
+      "control_occupancy": {
+        "capital_years": 1819.8699707446688,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b0_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 52.24463650596105,
+        "0.12": 81.1019717080174
+      },
+      "capital_time_reduction": 0.2635943513739101,
+      "cash_delta": 23.387301303904678,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 35.3290765388374,
+      "control_occupancy": {
+        "capital_years": 1824.6050577112014,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b0_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    }
+  ],
+  "control_replays": 0,
+  "control_unchanged": true,
+  "g4": false,
+  "independent_confirmation_attempts": 0,
+  "new_market_requests": 0,
+  "old_intentions_unchanged": true,
+  "payoff_attempts": 1,
+  "protected_bindings": 7087,
+  "scenarios": [
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 62.21178244942955,
+        "0.12": 90.5882815837152
+      },
+      "capital_time_reduction": 0.26084637488395024,
+      "cash_delta": 33.8352833151439,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 71.56584257224677,
+      "control_occupancy": {
+        "capital_years": 1813.1041784594656,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b-25_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 58.99275375494299,
+        "0.12": 87.37348150940687
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 30.61202600047909,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 74.78909988691157,
+      "control_occupancy": {
+        "capital_years": 1813.1746554624365,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b-25_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 67.79079949226607,
+        "0.12": 96.21804206869075
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 39.3635569158414,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 66.03756897154926,
+      "control_occupancy": {
+        "capital_years": 1813.949902495116,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b-25_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 80.92292621465519,
+        "0.12": 109.29942534894084
+      },
+      "capital_time_reduction": 0.26084637488395024,
+      "cash_delta": 52.54642708036954,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 52.85469880702112,
+      "control_occupancy": {
+        "capital_years": 1813.1041784594656,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b0_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 77.71196235414945,
+        "0.12": 106.09269010861334
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 49.33123459968556,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 56.069891287705104,
+      "control_occupancy": {
+        "capital_years": 1813.1746554624365,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b0_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 86.48810867223975,
+        "0.12": 114.91535124866442
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 58.06086609581507,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 47.34025979157559,
+      "control_occupancy": {
+        "capital_years": 1813.949902495116,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b0_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 99.54074756708603,
+        "0.12": 127.91724670137168
+      },
+      "capital_time_reduction": 0.26084637488395024,
+      "cash_delta": 71.16424843280038,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 34.236877454590285,
+      "control_occupancy": {
+        "capital_years": 1813.1041784594656,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "base_h0_b25_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 96.33780831695012,
+        "0.12": 124.71853607141401
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 67.95708056248623,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 37.44404532490444,
+      "control_occupancy": {
+        "capital_years": 1813.1746554624365,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "base_h0_b25_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 105.09216443984579,
+        "0.12": 133.51940701627046
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 76.66492186342111,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 28.73620402396955,
+      "control_occupancy": {
+        "capital_years": 1813.949902495116,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "base_h0_b25_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 39.238703006293285,
+        "0.12": 68.02114967769114
+      },
+      "capital_time_reduction": 0.26359435137390996,
+      "cash_delta": 10.456256334895443,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 94.94486955249522,
+      "control_occupancy": {
+        "capital_years": 1819.8699707446688,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b-25_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 38.073382820777624,
+        "0.12": 66.86005811235373
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 9.286707529201522,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 96.11441835818914,
+      "control_occupancy": {
+        "capital_years": 1819.9404477476398,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b-25_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 36.573394914599525,
+        "0.12": 65.40658502813642
+      },
+      "capital_time_reduction": 0.2639364124429815,
+      "cash_delta": 7.740204801062646,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 97.66092108632802,
+      "control_occupancy": {
+        "capital_years": 1820.7156947803192,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b-25_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 58.0083117024738,
+        "0.12": 86.79075837387165
+      },
+      "capital_time_reduction": 0.26359435137390996,
+      "cash_delta": 29.225865031075955,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 76.17526085631471,
+      "control_occupancy": {
+        "capital_years": 1819.8699707446688,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b0_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 56.84592225340748,
+        "0.12": 85.63259754498358
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 28.059246961831377,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 77.34187892555929,
+      "control_occupancy": {
+        "capital_years": 1819.9404477476398,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b0_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 55.34980828745011,
+        "0.12": 84.182998400987
+      },
+      "capital_time_reduction": 0.2639364124429815,
+      "cash_delta": 26.51661817391323,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 78.88450771347743,
+      "control_occupancy": {
+        "capital_years": 1820.7156947803192,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b0_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 76.68430639019294,
+        "0.12": 105.4667530615908
+      },
+      "capital_time_reduction": 0.26359435137390996,
+      "cash_delta": 47.901859718795095,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 57.49926616859557,
+      "control_occupancy": {
+        "capital_years": 1819.8699707446688,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "base_h8_b25_m0"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 75.52483306043723,
+        "0.12": 104.31150835201333
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 46.73815776886113,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 58.662968118529534,
+      "control_occupancy": {
+        "capital_years": 1819.9404477476398,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "base_h8_b25_m5"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": 24.991374314108384,
+        "0.12": -55.41837725917389
+      },
+      "benchmark_excess_delta": {
+        "0.06": 74.03257371330602,
+        "0.12": 102.86576382684291
+      },
+      "capital_time_reduction": 0.2639364124429815,
+      "cash_delta": 45.199383599769135,
+      "cash_net": 105.40112588739066,
+      "cash_return_pct": 1.0540112588739066,
+      "closed_quarters": 3,
+      "control_cash_net": 60.20174228762153,
+      "control_occupancy": {
+        "capital_years": 1820.7156947803192,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 22.824267668551464,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039029633377900524,
+      "occupancy": {
+        "capital_years": 1340.1625262213713,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.01575253733394443,
+          "cash_net": 18.400631608683398,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 7.325218004091511,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 1.9849353827667073,
+          "spot_spend": 2470.7719354519368,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039029633377900524,
+          "cash_net": 73.70570726774713,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 7.321875068036139,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 2.001554849484819,
+          "spot_spend": 2463.8829894203736,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.0336444826816122,
+          "cash_net": 13.294787010960135,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 8.177174596423816,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 1.9857235508002304,
+          "spot_spend": 2473.887627425355,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "base",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "base_h8_b25_m60"
+      },
+      "slippage_drag": 5.972213783051757,
+      "without_best_quarter": 31.695418619643533
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 56.42950323285428,
+        "0.12": 84.87983467019814
+      },
+      "capital_time_reduction": 0.2608463748839501,
+      "cash_delta": 27.97917179551041,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 30.737206047231666,
+      "control_occupancy": {
+        "capital_years": 1817.8216616326595,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b-25_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 53.220575171594426,
+        "0.12": 81.67514623148736
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 24.766004111701477,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 33.9503737310406,
+      "control_occupancy": {
+        "capital_years": 1817.8923220084775,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b-25_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 61.99037672503429,
+        "0.12": 90.4915836329672
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 33.489169817101356,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 25.22720802564072,
+      "control_occupancy": {
+        "capital_years": 1818.6695861424773,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b-25_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 75.0976168017593,
+        "0.12": 103.54794823910316
+      },
+      "capital_time_reduction": 0.2608463748839501,
+      "cash_delta": 46.64728536441544,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 12.069092478326638,
+      "control_occupancy": {
+        "capital_years": 1817.8216616326595,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b0_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 71.89673502770961,
+        "0.12": 100.35130608760255
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 43.44216396781667,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 15.274213874925408,
+      "control_occupancy": {
+        "capital_years": 1817.8923220084775,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b0_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 80.64468752421445,
+        "0.12": 109.14589443214737
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 52.14348061628152,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 6.5728972264605545,
+      "control_occupancy": {
+        "capital_years": 1818.6695861424773,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b0_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 93.67262257231292,
+        "0.12": 122.12295400965678
+      },
+      "capital_time_reduction": 0.2608463748839501,
+      "cash_delta": 65.22229113496905,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": -6.505913292226978,
+      "control_occupancy": {
+        "capital_years": 1817.8216616326595,
+        "holding_days": 267.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 0,
+        "id": "stress_h0_b25_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 90.47974695436346,
+        "0.12": 118.9343180142564
+      },
+      "capital_time_reduction": 0.26087510533861225,
+      "cash_delta": 62.02517589447052,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": -3.308798051728445,
+      "control_occupancy": {
+        "capital_years": 1817.8923220084775,
+        "holding_days": 267.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 0,
+        "id": "stress_h0_b25_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 99.20595936679265,
+        "0.12": 127.70716627472558
+      },
+      "capital_time_reduction": 0.2611909929938213,
+      "cash_delta": 70.70475245885973,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": -11.988374616117653,
+      "control_occupancy": {
+        "capital_years": 1818.6695861424773,
+        "holding_days": 268.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 0,
+        "id": "stress_h0_b25_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 33.51819245846552,
+        "0.12": 62.37552766052187
+      },
+      "capital_time_reduction": 0.2635943513739101,
+      "cash_delta": 4.660857256409145,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 54.05552058633293,
+      "control_occupancy": {
+        "capital_years": 1824.6050577112014,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b-25_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 32.358319488933176,
+        "0.12": 61.219894313538646
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 3.496744664327707,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 55.21963317841437,
+      "control_occupancy": {
+        "capital_years": 1824.6757180870195,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b-25_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 30.865083392203744,
+        "0.12": 59.77329406484915
+      },
+      "capital_time_reduction": 0.2639364124429814,
+      "cash_delta": 1.956872719558305,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 56.75950512318377,
+      "control_occupancy": {
+        "capital_years": 1825.4529822210188,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": -25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b-25_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 52.24463650596105,
+        "0.12": 81.1019717080174
+      },
+      "capital_time_reduction": 0.2635943513739101,
+      "cash_delta": 23.387301303904678,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 35.3290765388374,
+      "control_occupancy": {
+        "capital_years": 1824.6050577112014,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b0_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 51.08768753303665,
+        "0.12": 79.94926235764211
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 22.226112708431174,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 36.4902651343109,
+      "control_occupancy": {
+        "capital_years": 1824.6757180870195,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b0_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 49.59831646759441,
+        "0.12": 78.50652714023983
+      },
+      "capital_time_reduction": 0.2639364124429814,
+      "cash_delta": 20.690105794948977,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 38.0262720477931,
+      "control_occupancy": {
+        "capital_years": 1825.4529822210188,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 0,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b0_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 70.87768183003269,
+        "0.12": 99.73501703208905
+      },
+      "capital_time_reduction": 0.2635943513739101,
+      "cash_delta": 42.02034662797632,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 16.696031214765753,
+      "control_occupancy": {
+        "capital_years": 1824.6050577112014,
+        "holding_days": 268.9826388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 0,
+        "hour": 8,
+        "id": "stress_h8_b25_m0"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 69.72364227018514,
+        "0.12": 98.58521709479061
+      },
+      "capital_time_reduction": 0.2636228686054217,
+      "cash_delta": 40.86206744557967,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 17.854310397162408,
+      "control_occupancy": {
+        "capital_years": 1824.6757180870195,
+        "holding_days": 268.99305555555554
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 5,
+        "hour": 8,
+        "id": "stress_h8_b25_m5"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    },
+    {
+      "benchmark_excess": {
+        "0.06": -21.90259041787362,
+        "0.12": -102.52155867848933
+      },
+      "benchmark_excess_delta": {
+        "0.06": 68.23811695906616,
+        "0.12": 97.14632763171159
+      },
+      "capital_time_reduction": 0.2639364124429814,
+      "cash_delta": 39.32990628642074,
+      "cash_net": 58.71637784274208,
+      "cash_return_pct": 0.5871637784274207,
+      "closed_quarters": 3,
+      "control_cash_net": 19.38647155632134,
+      "control_occupancy": {
+        "capital_years": 1825.4529822210188,
+        "holding_days": 269.1076388888889
+      },
+      "execution_fees": 45.62034663072275,
+      "gross": 134.19760733899193,
+      "observed_cash_drawdown": 0.039017679762256625,
+      "occupancy": {
+        "capital_years": 1343.6494710102615,
+        "holding_days": 198.00347222222223
+      },
+      "quarters": [
+        {
+          "cash_drawdown": null,
+          "cash_net": 0.0,
+          "convergence_decision_bar": null,
+          "convergence_earliest_exit_ms": null,
+          "entry_ms": null,
+          "execution_fees": null,
+          "exit_ms": null,
+          "gross": null,
+          "settled": null,
+          "slippage_drag": null,
+          "spot_spend": null,
+          "status": "NO_INTENTION",
+          "symbol": "BTCUSD_230331",
+          "unknown_reasons": null
+        },
+        {
+          "cash_drawdown": 0.015724215101909095,
+          "cash_net": 3.1444862862554146,
+          "convergence_decision_bar": 1685980800000,
+          "convergence_earliest_exit_ms": 1685981400000,
+          "entry_ms": 1680339600000,
+          "execution_fees": 14.641656605054239,
+          "exit_ms": 1685981400000,
+          "gross": 27.710784995541417,
+          "settled": false,
+          "slippage_drag": 9.924642104231225,
+          "spot_spend": 2477.2005925411277,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230630",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.039017679762256625,
+          "cash_net": 58.38667970734059,
+          "convergence_decision_bar": 1692308400000,
+          "convergence_earliest_exit_ms": 1692309000000,
+          "entry_ms": 1688202000000,
+          "execution_fees": 14.6348064697804,
+          "exit_ms": 1692309000000,
+          "gross": 83.02913718526725,
+          "settled": false,
+          "slippage_drag": 10.007651008144876,
+          "spot_spend": 2470.2937222847063,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_230929",
+          "unknown_reasons": {}
+        },
+        {
+          "cash_drawdown": 0.03368299822594703,
+          "cash_net": -2.8147881508539285,
+          "convergence_decision_bar": 1703499600000,
+          "convergence_earliest_exit_ms": 1703500200000,
+          "entry_ms": 1696141500000,
+          "execution_fees": 16.343883555888112,
+          "exit_ms": 1703500200000,
+          "gross": 23.457685158183267,
+          "settled": false,
+          "slippage_drag": 9.928589753149026,
+          "spot_spend": 2480.3243911774894,
+          "status": "CLOSED",
+          "symbol": "BTCUSD_231229",
+          "unknown_reasons": {}
+        }
+      ],
+      "scenario": {
+        "bias_bps": 25,
+        "cost": "stress",
+        "delay_minutes": 60,
+        "hour": 8,
+        "id": "stress_h8_b25_m60"
+      },
+      "slippage_drag": 29.860882865525127,
+      "without_best_quarter": 0.32969813540148607
+    }
+  ],
+  "source_hashes": {
+    ".artifacts/dated-basis-conditional-development-20261018/result.json": "1db2256a17cdddaa601aa66e65100fd29aa07b15e097b5a703f1d73747f6e992",
+    ".artifacts/dated-basis-convergence-exit-20261018/stage.py": "41b6f80dc5f61520b2465a219e5e7c427f78fce76953067168beeb784fd6186b",
+    ".artifacts/dated-basis-term-20261018/gap-diagnostic/reconciled-bundle.json": "4fff4e4c9790a173e192fdd5d192b3673b34860da36497a683fad03455cd0e09",
+    "tools/audit_dated_basis_convergence_replay.py": "aff89e3af7e74a011de5717079a5fcfa3438918a8a1bc4e47324fe334fecb9f5",
+    "tools/dated_basis_convergence_replay.py": "bd865d089348c3b6fd77e05dd350b294f2b7da053b1cbc964fc0987b6dc3b124",
+    "tools/dated_basis_dual_ledger.py": "30a5f44906d6bf955c7f0afe982f82af224d6a4bdf6cf22c2d7f5fec7cf19ec0",
+    "tools/dated_basis_opportunity_capacity.py": "e29d17da62918e447001fc2d2e0545b0a93595dc732cc130b247f29c641a6e4e",
+    "tools/test_dated_basis_convergence_replay.py": "3c4e78da42b14632e4431dc4c7e2b6ac54f36bbaf1d6e20c4dca63d00e8a1e75"
+  },
+  "summary": {
+    "actual_execution_qualified": false,
+    "base_central_cash": 105.40112588739066,
+    "base_closed_quarters": 3,
+    "candidate_qualified": false,
+    "conditional_model": true,
+    "economic_batch_count": 1,
+    "exit_policy": "FIRST_CONVERGENCE_CASH_COMPARISON",
+    "g4": false,
+    "halted_scenarios": 0,
+    "independent_confirmation_attempts": 0,
+    "policy_count": 1,
+    "pressure_cash_max": 58.71637784274208,
+    "pressure_cash_min": 58.71637784274208,
+    "status": "CONDITIONAL_DEVELOPMENT_SUPPORTED",
+    "stress_central_cash": 58.71637784274208,
+    "stress_closed_quarters": 3,
+    "training_vectors": 0,
+    "uncertain_scenarios": 0,
+    "unresolved_scenarios": 0
+  },
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 212
+  },
+  "training_vectors": 0
+}
