@@ -1,0 +1,111 @@
+{
+  "account_operations": 0,
+  "automatic_wait": false,
+  "candidate_qualified": false,
+  "conditional_market_replay_adapter": false,
+  "confirmation": {
+    "affordable_confirmatory_endpoint": "UNBOUND",
+    "candidate_qualified": false,
+    "component": "IID_EQUAL_MAGNITUDE_SIGN_ONLY",
+    "confirmation_attempts": 0,
+    "current_2023_independent_confirmation_blocks": 0,
+    "current_2023_settlement_events": 4,
+    "economic_mean_effect": "UNKNOWN",
+    "economic_tail_bound": "UNKNOWN_8_PERCENT_IS_NOT_LOSS_CAP",
+    "g4": false,
+    "historical_unconsumed_domain": "UNBOUND",
+    "investable_benchmark": "UNBOUND",
+    "market_payoff_admitted": false,
+    "rows": [
+      {
+        "all_positive_null_probability": 0.0625,
+        "blocks": 4,
+        "critical_wins": 5,
+        "power": {
+          "3/4": 0.0,
+          "3/5": 0.0
+        },
+        "size": 0.0
+      },
+      {
+        "all_positive_null_probability": 0.00390625,
+        "blocks": 8,
+        "critical_wins": 7,
+        "power": {
+          "3/4": 0.3670806884765625,
+          "3/5": 0.10637568
+        },
+        "size": 0.03515625
+      },
+      {
+        "all_positive_null_probability": 0.000244140625,
+        "blocks": 12,
+        "critical_wins": 10,
+        "power": {
+          "3/4": 0.39067500829696655,
+          "3/5": 0.08344332288
+        },
+        "size": 0.019287109375
+      },
+      {
+        "all_positive_null_probability": 9.5367431640625e-07,
+        "blocks": 20,
+        "critical_wins": 15,
+        "power": {
+          "3/4": 0.6171726543871046,
+          "3/5": 0.12559897272303747
+        },
+        "size": 0.020694732666015625
+      },
+      {
+        "all_positive_null_probability": 9.094947017729282e-13,
+        "blocks": 40,
+        "critical_wins": 26,
+        "power": {
+          "3/4": 0.9455627519813652,
+          "3/5": 0.3174251602390341
+        },
+        "size": 0.0403452338759962
+      }
+    ],
+    "status": "CONFIRMATION_UNBOUND",
+    "win_rate_counterexample": {
+      "loss_size": -20,
+      "losses": 1,
+      "total": -11,
+      "win_size": 1,
+      "wins": 9
+    }
+  },
+  "decimal_ledgers": 11,
+  "decimal_risk_bars": 51845,
+  "deployments": 0,
+  "engineering": "PASS",
+  "g4": false,
+  "market_payoff_attempts": 0,
+  "new_market_requests": 0,
+  "operator_reduce_only": "UNCHANGED",
+  "plan_sha256": "20a3ffe0a132985e7461f505ba39f80086828fd84aecd919096fc9d0a28b04d5",
+  "policy": "FIRST_12_STRESS_CASH_POSITIVE",
+  "production_adapter": false,
+  "protected_files": 6951,
+  "real_quote_decision_scans": 0,
+  "reference": "NO_TRADE_CASH_WITH_NO_ASSUMED_INTEREST",
+  "sources": {
+    "/Users/sk.wang/Projects/c++/ai-trade/.artifacts/dated-basis-dual-ledger-20261018/stage.py": "506bcac8897d795058af5f88388ef3e6d16d65a72b2b00abc7c79b4640ad7f35",
+    "tools/audit_dated_basis_dual_ledger.py": "0ef3046f03efc4518d586d54371473fa2e8eecf223fc040ec4bfab4918b1f168",
+    "tools/dated_basis_dual_ledger.py": "30a5f44906d6bf955c7f0afe982f82af224d6a4bdf6cf22c2d7f5fec7cf19ec0",
+    "tools/test_dated_basis_dual_ledger.py": "bf080fb1e410cc82c372691dab7eb0666139157fafe6ba4be021d132fb9fcab9"
+  },
+  "status": "ENGINEERING_COMPLETE_CONFIRMATION_UNBOUND",
+  "synthetic_sha256": "ac7c90790df22a22430877c2a764df9a72a7c9d38801751ef105cfde263db6c0",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 44
+  },
+  "training_vectors": 0,
+  "validation_failures": []
+}
