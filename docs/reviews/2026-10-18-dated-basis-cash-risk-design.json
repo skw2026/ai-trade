@@ -1,0 +1,80 @@
+{
+  "accounts": 0,
+  "cases": [
+    {
+      "cash_net": 67.92797309365778,
+      "drawdown": 0.0,
+      "forecast": 67.92797309365824,
+      "minimum_margin": 19.980701855701856,
+      "name": "flat_spot_assumed_index",
+      "observed_cash": 10065.446651427792,
+      "risk": null
+    },
+    {
+      "cash_net": -152.22729171024184,
+      "drawdown": 0.015448867804663313,
+      "forecast": 67.92797309365824,
+      "minimum_margin": 19.978824978824974,
+      "name": "index_gap",
+      "observed_cash": 9845.511321953367,
+      "risk": null
+    },
+    {
+      "cash_net": -19.425019437507217,
+      "drawdown": 0.0021912544407539825,
+      "forecast": 67.92797309365824,
+      "minimum_margin": 19.229999229999294,
+      "name": "coin_fee_exposure",
+      "observed_cash": 9978.08745559246,
+      "risk": null
+    },
+    {
+      "cash_net": -1420.8650264255266,
+      "drawdown": 0.14208650264255265,
+      "forecast": 67.92797309365824,
+      "minimum_margin": 19.96919996919997,
+      "name": "drawdown_exit_overshoot",
+      "observed_cash": 9138.828091831216,
+      "risk": "DRAWDOWN_8_PERCENT"
+    }
+  ],
+  "classification": "Diagnostic counterexamples under existing model, not economic rejection of every strategy, new risk thresholds or guaranteed-profit requirement",
+  "conditional_box_lower": 65.52893463211917,
+  "conditional_box_market_certified": false,
+  "confirmation_attempts": 0,
+  "decimal_terminal_grid": 50,
+  "deployments": 0,
+  "frozen_engine_and_independent_auditor_cases": 4,
+  "g4": false,
+  "market_payoff_attempts": 0,
+  "market_requests": 0,
+  "next_market_scope": "NOT_ADMITTED_INDEPENDENT_INPUT_EFFECT_TAIL_SELECTION_AND_AFFORDABLE_ENDPOINT_UNBOUND",
+  "orders": 0,
+  "proof_obligations": {
+    "coin_liabilities": "BTC commissions and financing, including balance after delivery until actual spot disposal",
+    "economic_confirmation": "Frozen effect, dependence/tails, selection control, independent inputs and affordable endpoint",
+    "entry_cash_cost": "Observed executable prices, full fees, size precision and causal two-leg fills",
+    "new_economic_admission": false,
+    "path_risk": "Full-life mark/spot/account observations and actual risk-exit mechanics; terminal result alone insufficient",
+    "settlement_conversion": "Joint exit spot/index/FX distribution; +25bps is a scenario, not an attested bound",
+    "worst_case_guarantee_required_by_product": false
+  },
+  "protected_bindings": 7005,
+  "rectangle_checks": 72,
+  "sources": {
+    ".artifacts/dated-basis-risk-design-20261018/scope.json": "d3ff4feb095f8e5b7cc1662a4fb1469e1870920427f58bdff09d2ea594cc7173",
+    ".artifacts/dated-basis-risk-design-20261018/stage.py": "e873021f364f835ad4af79727d6bd277394115f117cc6e2075c64ef8181d4ff3",
+    "tools/dated_basis_cash_boundary.py": "8b59d019a8a5baf5f089a9b51806049937ce0648cfb1b5babc1da1dd29139801",
+    "tools/test_dated_basis_cash_boundary.py": "5257bb7de5429725ad4c57ec048c61f20f1f7e14265cb4539bbee20c0865ad22"
+  },
+  "status": "CASH_RISK_IDENTIFIED_CONFIRMATION_STILL_UNBOUND",
+  "synthetic_flat_exit_max_index_ratio": 1.0306876308250355,
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 69
+  },
+  "training_vectors": 0
+}
