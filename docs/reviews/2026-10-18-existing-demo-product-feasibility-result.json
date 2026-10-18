@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "stage": "existing-demo-product-20261018",
+  "status": "SUPPORTED_AT_DOCUMENT_LEVEL",
+  "requires_binance_account": false,
+  "account_eligibility": "UNKNOWN",
+  "runtime_supported": false,
+  "g4": false,
+  "candidate_count": 0,
+  "confirmation_attempts": 0,
+  "operator_demo_entry_ban": "UNCHANGED",
+  "resources": {
+    "official_read_operations": 11,
+    "public_metadata_gets": 2,
+    "account_requests": 0,
+    "market_price_requests": 0,
+    "economic_attempts": 0,
+    "production_changes": 0
+  },
+  "public_catalog": {
+    "inverse": [
+      {
+        "symbol": "BTCUSDH27",
+        "contractType": "InverseFutures",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USD",
+        "settleCoin": "BTC",
+        "deliveryTime": "1806048000000",
+        "deliveryFeeRate": "0.0005",
+        "lotSizeFilter": {
+          "maxMktOrderQty": "1000000",
+          "maxOrderQty": "5000000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "5000000",
+          "qtyStep": "1"
+        },
+        "unifiedMarginTrade": true
+      },
+      {
+        "symbol": "BTCUSDZ26",
+        "contractType": "InverseFutures",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USD",
+        "settleCoin": "BTC",
+        "deliveryTime": "1798185600000",
+        "deliveryFeeRate": "0.0005",
+        "lotSizeFilter": {
+          "maxMktOrderQty": "1000000",
+          "maxOrderQty": "5000000",
+          "minNotionalValue": "5",
+          "minOrderQty": "1",
+          "postOnlyMaxOrderQty": "5000000",
+          "qtyStep": "1"
+        },
+        "unifiedMarginTrade": true
+      }
+    ],
+    "spot": [
+      {
+        "symbol": "BTCUSDT",
+        "status": "Trading",
+        "baseCoin": "BTC",
+        "quoteCoin": "USDT",
+        "lotSizeFilter": {
+          "basePrecision": "0.000001",
+          "maxLimitOrderQty": "230",
+          "maxMarketOrderQty": "120",
+          "maxOrderAmt": "8000000",
+          "maxOrderQty": "230",
+          "minOrderAmt": "5",
+          "minOrderQty": "0.000001",
+          "postOnlyMaxLimitOrderSize": "1150",
+          "quotePrecision": "0.0000001"
+        },
+        "marginTrading": "utaOnly"
+      }
+    ]
+  },
+  "contract_semantics": {
+    "bybit_inverse_face_usd": "1",
+    "face_2500_bybit_contracts": "2500",
+    "binance_inverse_face_usd": "100",
+    "face_2500_binance_contracts": "25",
+    "spot_market_buy_default": "quoteCoin",
+    "spot_base_quantity_requires": "marketUnit=baseCoin",
+    "actual_account_fee_rate": "UNKNOWN",
+    "actual_account_uta_version": "UNKNOWN",
+    "actual_inverse_margin_readiness": "UNKNOWN"
+  },
+  "implementation_gaps": [
+    "per-intent product category and unit",
+    "spot base quantity marketUnit",
+    "asset-denominated fill fee and inventory",
+    "inverse quantity and BTC settlement",
+    "spot-compatible inventory risk guard without reduceOnly assumption",
+    "two-leg lifecycle and account/collateral binding"
+  ],
+  "sources": [
+    "https://bybit-exchange.github.io/docs/v5/demo",
+    "https://www.bybit.com/en/help-center/article/FAQ-Demo-Trading",
+    "https://bybit-exchange.github.io/docs/v5/acct-mode",
+    "https://bybit-exchange.github.io/docs/v5/market/instrument",
+    "https://bybit-exchange.github.io/docs/v5/order/create-order",
+    "https://www.bybit.com/en/learn/trading/how-to-trade-inverse-futures",
+    "https://bybit-exchange.github.io/docs/v5/websocket/private/execution"
+  ],
+  "next": "Prefer bounded existing Bybit Demo read-only eligibility evidence, not new-account requirement; no order, funds, account mode, or operator lock changes."
+}

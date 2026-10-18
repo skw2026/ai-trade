@@ -11,6 +11,16 @@
 
 ## 开始与阶段边界
 
+- 2026-10-18 接续自主研究完成现有Bybit Demo产品核对，见existing-demo-product-
+  feasibility计划/结果。11官方读取/2公共目录GET，0账户/价格/经济/生产。
+  SUPPORTED_AT_DOCUMENT_LEVEL：官方Demo UTA支持现货/衍生品，公共目录有
+  BTCUSDZ26/H27反向交割与BTCUSDT；不是实际账户资格或成交证明。Bybit
+  1USD/张、2500USD=2500张，spot市价买入默认quoteCoin；现有线性adapter/
+  单币种账不支持，不直接改symbol运行。7534绑定六草稿保持，7源码核对。
+  下一优先既有Demo有界只读账户/抵押/费用资格，不再把Binance新环境作为
+  唯一前置或重复索权；缺费用UNKNOWN，不试单/领资金/划转/改账户模式。
+  研究文档main skip-ci核SHA；旧经济/gate、G4/候选0/确认0/Demo禁开仓不改。
+
 - 2026-10-18 接续执行/经济圆桌完成手续费匹配代数裁决，见dated-basis-fee-match
   计划/结果。90min/1合成批次，0网络/行情/市场收益/训练/账户/生产。
   目标净BTC=ΣN_j/F_j+实际BTC入场费，可消掉旧负费尾项；费用转为入场
