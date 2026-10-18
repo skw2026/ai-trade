@@ -1,0 +1,1735 @@
+{
+  "audit": {
+    "horizons": {
+      "30": {
+        "absolute_tolerance": "0.0000001",
+        "development": {
+          "all_stress_positive": false,
+          "base_positive": false,
+          "base_without_best": -7.074047096224604,
+          "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+          "stress_without_best": -32.914814396515794,
+          "supported": false
+        },
+        "independent_precision": 40,
+        "ledgers": 270,
+        "risk_bars": 2319822,
+        "status": "DECIMAL_CASH_RISK_AND_POLICY_MATCH",
+        "verdict": "NO_GO_BASE"
+      },
+      "60": {
+        "absolute_tolerance": "0.0000001",
+        "development": {
+          "all_stress_positive": false,
+          "base_positive": false,
+          "base_without_best": -6.656095175658265,
+          "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+          "stress_without_best": -44.786244553677534,
+          "supported": false
+        },
+        "independent_precision": 40,
+        "ledgers": 270,
+        "risk_bars": 4652622,
+        "status": "DECIMAL_CASH_RISK_AND_POLICY_MATCH",
+        "verdict": "NO_GO_BASE"
+      },
+      "90": {
+        "absolute_tolerance": "0.0000001",
+        "development": {
+          "all_stress_positive": false,
+          "base_positive": false,
+          "base_without_best": 0.0,
+          "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+          "stress_without_best": 0.0,
+          "supported": false
+        },
+        "independent_precision": 40,
+        "ledgers": 216,
+        "risk_bars": 5588154,
+        "status": "DECIMAL_CASH_RISK_AND_POLICY_MATCH",
+        "verdict": "NO_GO_NO_TRADES"
+      }
+    },
+    "runtime_seconds": 85.47344349999912,
+    "total_ledgers": 756,
+    "total_risk_bars": 12560598
+  },
+  "background_wait": false,
+  "economic_attempts": 1,
+  "failure_history": [
+    {
+      "at": "2026-10-18T12:20:41.471961+00:00",
+      "command_sha256": "de72ffa861aa62348790892f62a21dcb94ba11c7f8464ead2b3f573299866c9b",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "term-complete-input-economic-admission",
+      "retry_of": null
+    }
+  ],
+  "frozen_result_sha256": "6d0bbe8f260cffb145d14fdefa1764f67599c627392b1dbb0a6b924112a8a182",
+  "g4": false,
+  "gap_diagnosis": {
+    "actual_gets": 20,
+    "critical_complete": true,
+    "economic_attempts": 0,
+    "old_monthly_originals_preserved": true,
+    "provider_internal_cause": "UNKNOWN",
+    "reconciled": {
+      "future": {
+        "added": 1152,
+        "overlap": 288
+      },
+      "mark": {
+        "added": 1152,
+        "overlap": 288
+      }
+    },
+    "status": "SAME_SOURCE_DAILY_COVERAGE_RECOVERED"
+  },
+  "horizons": {
+    "30": {
+      "common_scenario_net_range": [
+        -39.10355528556829,
+        41.361798362906484
+      ],
+      "decision_count": 1,
+      "development": {
+        "all_stress_positive": false,
+        "base_positive": false,
+        "base_without_best": -7.074047096224604,
+        "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+        "stress_without_best": -32.914814396515794,
+        "supported": false
+      },
+      "policy_attribution": {
+        "base": {
+          "capital_charge": 12.233035300288048,
+          "cash_net_same_model_path": 5.1589882040620445,
+          "cash_without_best": 0.0,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.026178834227711355
+        },
+        "stress": {
+          "capital_charge": 24.52972842991851,
+          "cash_net_same_model_path": -8.385085966596096,
+          "cash_without_best": -8.385085966596096,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.026143827369214775
+        },
+        "zero_friction": {
+          "capital_charge": 0.0,
+          "cash_net_same_model_path": 14.233904941146193,
+          "cash_without_best": 0.0,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.02619831616571883
+        }
+      },
+      "policy_central": {
+        "base": {
+          "halted": false,
+          "net": -7.074047096224604,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.05887917959098286,
+                "btc_bought": 0.06496830440708802,
+                "capital": 10000.0,
+                "checked_bars": 8639,
+                "end_capital": 9992.925952903775,
+                "end_peak": 10124.188676553287,
+                "entry_ms": 1701245100000,
+                "execution_future_entry": 38480.3024,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 38147.77803,
+                "execution_spot_exit": 42264.89533,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": -28.29618838489841,
+                "fees": 7.585428546931833,
+                "future_entry": 38488.0,
+                "future_fee_in_btc": 3.248415220354401e-05,
+                "future_fee_out_btc": 2.947056715517079e-05,
+                "gross": 14.233904941146193,
+                "gross_cost_capacity_bps": 56.93561976458477,
+                "held_ms": 2591700000,
+                "minimum_margin_ratio": 19.988312190645686,
+                "net": -7.074047096224604,
+                "observed_drawdown": 0.026178834227711355,
+                "opportunity_cost": 12.233035300288048,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "base",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "base_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 1.489488190152315,
+                "spot_entry": 38140.15,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 2.478396455507065,
+                "spot_fee_out": 2.488522362529163,
+                "spot_spend": 2480.874851962572,
+                "unknown_bars": 45
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": -0.07074047096224945,
+          "risk_unknown": true
+        },
+        "stress": {
+          "halted": false,
+          "net": -32.914814396515794,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.05881717284495395,
+                "btc_bought": 0.06502033107728389,
+                "capital": 10000.0,
+                "checked_bars": 8639,
+                "end_capital": 9967.085185603484,
+                "end_peak": 10103.44304344589,
+                "entry_ms": 1701245100000,
+                "execution_future_entry": 38449.512,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 38178.29015,
+                "execution_spot_exit": 42231.076649999995,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": -131.65925758606318,
+                "fees": 15.167581346969444,
+                "future_entry": 38488.0,
+                "future_fee_in_btc": 6.502033107728389e-05,
+                "future_fee_out_btc": 5.894113431034158e-05,
+                "gross": 14.233904941146193,
+                "gross_cost_capacity_bps": 56.93561976458477,
+                "held_ms": 2591700000,
+                "minimum_margin_ratio": 19.976605662077198,
+                "net": -32.914814396515794,
+                "observed_drawdown": 0.026143827369214775,
+                "opportunity_cost": 24.52972842991851,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "stress",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "stress_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 7.451409560772845,
+                "spot_entry": 38140.15,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 4.964730131035213,
+                "spot_fee_out": 4.967825069503097,
+                "spot_spend": 2487.3297956486417,
+                "unknown_bars": 45
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": -0.32914814396516334,
+          "risk_unknown": true
+        },
+        "zero_friction": {
+          "halted": false,
+          "net": 14.233904941145738,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.058941134310341585,
+                "btc_bought": 0.06495531074620661,
+                "capital": 10000.0,
+                "checked_bars": 8639,
+                "end_capital": 10014.233904941146,
+                "end_peak": 10138.80725176923,
+                "entry_ms": 1701245100000,
+                "execution_future_entry": 38488.0,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 38140.15,
+                "execution_spot_exit": 42273.35,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": 56.93561976458295,
+                "fees": 0.0,
+                "future_entry": 38488.0,
+                "future_fee_in_btc": 0.0,
+                "future_fee_out_btc": 0.0,
+                "gross": 14.233904941146193,
+                "gross_cost_capacity_bps": 56.93561976458477,
+                "held_ms": 2591700000,
+                "minimum_margin_ratio": 19.999999999999996,
+                "net": 14.233904941145738,
+                "observed_drawdown": 0.02619831616571883,
+                "opportunity_cost": 0.0,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "zero_friction",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "zero_friction_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 0.0,
+                "spot_entry": 38140.15,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 0.0,
+                "spot_fee_out": 0.0,
+                "spot_spend": 2477.4052951569324,
+                "unknown_bars": 45
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": 0.14233904941145514,
+          "risk_unknown": true
+        }
+      },
+      "quarters": {
+        "BTCUSD_230331": {
+          "base": {
+            "fees": 7.672024527773573,
+            "gross": 8.377465730694894,
+            "held_ms": 2591700000,
+            "minimum_margin_ratio": 19.98776617795215,
+            "net": -13.05224030861973,
+            "observed_drawdown": 0.015872372104265838,
+            "opportunity_cost": 12.265428025579803,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4922534859615553
+          },
+          "decision": {
+            "decision_bar": 1677657300000,
+            "enter": false,
+            "expected_net": -5.801235873430899,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 23863.4,
+            "spot": 23716.06
+          },
+          "decision_premium_bps": 62.12667702814034,
+          "entry_component": 16.03460694483999,
+          "stress": {
+            "net": -39.023097082721506,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -7.657141214144902
+        },
+        "BTCUSD_230630": {
+          "base": {
+            "fees": 7.652948062687238,
+            "gross": 13.568183240804956,
+            "held_ms": 2591700000,
+            "minimum_margin_ratio": 19.988442397590106,
+            "net": -7.873227593834599,
+            "observed_drawdown": 0.011339683516985733,
+            "opportunity_cost": 12.291948227681774,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4965145442729408
+          },
+          "decision": {
+            "decision_bar": 1685519700000,
+            "enter": false,
+            "expected_net": -10.96246009612509,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 27280.4,
+            "spot": 27167.9
+          },
+          "decision_premium_bps": 41.4091630195923,
+          "entry_component": 10.663798514777001,
+          "stress": {
+            "net": -33.86878091091421,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 2.904384726027387
+        },
+        "BTCUSD_230929": {
+          "base": {
+            "fees": 7.489190390789428,
+            "gross": 13.202119676782786,
+            "held_ms": 2591700000,
+            "minimum_margin_ratio": 19.98995146222771,
+            "net": -8.101704809703733,
+            "observed_drawdown": 0.0076674789152607475,
+            "opportunity_cost": 12.315348949703818,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.499285145993781
+          },
+          "decision": {
+            "decision_bar": 1693382100000,
+            "enter": false,
+            "expected_net": -14.558118391421242,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 27510.4,
+            "spot": 27436.25
+          },
+          "decision_premium_bps": 27.026288213587435,
+          "entry_component": 5.924739791833278,
+          "stress": {
+            "net": -33.96846372982509,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 7.277379884949586
+        },
+        "BTCUSD_231229": {
+          "base": {
+            "fees": 7.585428546931833,
+            "gross": 14.233904941146193,
+            "held_ms": 2591700000,
+            "minimum_margin_ratio": 19.988312190645686,
+            "net": -7.074047096224604,
+            "observed_drawdown": 0.026178834227711355,
+            "opportunity_cost": 12.233035300288048,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.489488190152315
+          },
+          "decision": {
+            "decision_bar": 1701244500000,
+            "enter": true,
+            "expected_net": 2.389641414259584,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 38459.3,
+            "spot": 38096.69
+          },
+          "decision_premium_bps": 95.18149739518034,
+          "entry_component": 22.59470484306775,
+          "stress": {
+            "net": -32.914814396515794,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -8.360799901921956
+        }
+      },
+      "status": "NO_GO_BASE",
+      "stress_cash_range_same_paths": [
+        -14.573826855649806,
+        18.611520873776666
+      ],
+      "stress_range": [
+        -39.10355528556829,
+        -5.648462886523703
+      ]
+    },
+    "60": {
+      "common_scenario_net_range": [
+        -50.97498544273003,
+        54.02167430188638
+      ],
+      "decision_count": 1,
+      "development": {
+        "all_stress_positive": false,
+        "base_positive": false,
+        "base_without_best": -6.656095175658265,
+        "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+        "stress_without_best": -44.786244553677534,
+        "supported": false
+      },
+      "policy_attribution": {
+        "base": {
+          "capital_charge": 24.342454461013556,
+          "cash_net_same_model_path": 17.686359285355692,
+          "cash_without_best": 0.0,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.026177035418060504
+        },
+        "stress": {
+          "capital_charge": 48.81158131148863,
+          "cash_net_same_model_path": 4.025336757811841,
+          "cash_without_best": 0.0,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.0261731433723385
+        },
+        "zero_friction": {
+          "capital_charge": 0.0,
+          "cash_net_same_model_path": 26.893780880126087,
+          "cash_without_best": 0.0,
+          "executed_episodes": 1,
+          "maximum_observed_model_drawdown": 0.026165644293929688
+        }
+      },
+      "policy_central": {
+        "base": {
+          "halted": false,
+          "net": -6.656095175658265,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.05887562143365324,
+                "btc_bought": 0.07208461906631623,
+                "capital": 10000.0,
+                "checked_bars": 17279,
+                "end_capital": 9993.343904824342,
+                "end_peak": 10124.566966050377,
+                "entry_ms": 1698653100000,
+                "execution_future_entry": 34681.46232,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 34206.069846000006,
+                "execution_spot_exit": 42264.89533,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": -26.62438070263306,
+                "fees": 7.722998367986195,
+                "future_entry": 34688.4,
+                "future_fee_in_btc": 3.6042309533158116e-05,
+                "future_fee_out_btc": 2.947056715517079e-05,
+                "gross": 26.893780880126087,
+                "gross_cost_capacity_bps": 107.57512352050435,
+                "held_ms": 5183700000,
+                "minimum_margin_ratio": 19.987031964390724,
+                "net": -6.656095175658265,
+                "observed_drawdown": 0.026177035418060504,
+                "opportunity_cost": 24.342454461013556,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "base",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "base_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 1.4844232267842017,
+                "spot_entry": 34199.23,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 2.465731514604717,
+                "spot_fee_out": 2.488371977382059,
+                "spot_spend": 2468.1972461193213,
+                "unknown_bars": 182
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": -0.06656095175657795,
+          "risk_unknown": true
+        },
+        "stress": {
+          "halted": false,
+          "net": -44.786244553677534,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.05881005083154425,
+                "btc_bought": 0.07214234448698996,
+                "capital": 10000.0,
+                "checked_bars": 17279,
+                "end_capital": 9955.213755446322,
+                "end_peak": 10091.492093946865,
+                "entry_ms": 1698653100000,
+                "execution_future_entry": 34653.7116,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 34233.42923,
+                "execution_spot_exit": 42231.076649999995,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": -179.14497821471014,
+                "fees": 15.442379658516744,
+                "future_entry": 34688.4,
+                "future_fee_in_btc": 7.214234448698996e-05,
+                "future_fee_out_btc": 5.894113431034158e-05,
+                "gross": 26.893780880126087,
+                "gross_cost_capacity_bps": 107.57512352050435,
+                "held_ms": 5183700000,
+                "minimum_margin_ratio": 19.974043159154853,
+                "net": -44.786244553677534,
+                "observed_drawdown": 0.0261731433723385,
+                "opportunity_cost": 48.81158131148863,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "stress",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "stress_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 7.426064463797502,
+                "spot_entry": 34199.23,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 4.939359688963303,
+                "spot_fee_out": 4.967223528914683,
+                "spot_spend": 2474.6192041706145,
+                "unknown_bars": 182
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": -0.447862445536773,
+          "risk_unknown": true
+        },
+        "zero_friction": {
+          "halted": false,
+          "net": 26.893780880125632,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "ledger": {
+                "actual_execution_qualified": false,
+                "btc_after_exit": 0.05894113431034157,
+                "btc_bought": 0.07207020214250297,
+                "capital": 10000.0,
+                "checked_bars": 17279,
+                "end_capital": 10026.893780880126,
+                "end_peak": 10151.46712770821,
+                "entry_ms": 1698653100000,
+                "execution_future_entry": 34688.4,
+                "execution_future_exit": 42415.2,
+                "execution_spot_entry": 34199.23,
+                "execution_spot_exit": 42273.35,
+                "exit_ms": 1703836800000,
+                "extra_cost_headroom_bps": 107.57512352050252,
+                "fees": 0.0,
+                "future_entry": 34688.4,
+                "future_fee_in_btc": 0.0,
+                "future_fee_out_btc": 0.0,
+                "gross": 26.893780880126087,
+                "gross_cost_capacity_bps": 107.57512352050435,
+                "held_ms": 5183700000,
+                "minimum_margin_ratio": 19.999999999999993,
+                "net": 26.893780880125632,
+                "observed_drawdown": 0.026165644293929688,
+                "opportunity_cost": 0.0,
+                "planned_exit_ms": 1703836800000,
+                "prior_peak": 10000.0,
+                "raw_future_exit": 42415.2,
+                "risk_exit_unavailable": false,
+                "risk_reason": null,
+                "risk_status": "UNKNOWN",
+                "scenario": {
+                  "bias_bps": 0,
+                  "cost": "zero_friction",
+                  "delay_minutes": 0,
+                  "hour": 8,
+                  "id": "zero_friction_h8_b0_m0"
+                },
+                "settlement_ms": 1703836800000,
+                "slippage_drag": 0.0,
+                "spot_entry": 34199.23,
+                "spot_exit": 42273.35,
+                "spot_fee_in": 0.0,
+                "spot_fee_out": 0.0,
+                "spot_spend": 2464.745419217952,
+                "unknown_bars": 182
+              },
+              "status": "CONDITIONAL_MODEL_PATH",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": 0.2689378088012617,
+          "risk_unknown": true
+        }
+      },
+      "quarters": {
+        "BTCUSD_230331": {
+          "base": {
+            "fees": 7.662462379089245,
+            "gross": 17.353114466246552,
+            "held_ms": 5183700000,
+            "minimum_margin_ratio": 19.987771094177543,
+            "net": -16.241640449927218,
+            "observed_drawdown": 0.015877467264341073,
+            "opportunity_cost": 24.44363002881318,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4886625082722276
+          },
+          "decision": {
+            "decision_bar": 1675065300000,
+            "enter": false,
+            "expected_net": -9.026235217929347,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 23875.6,
+            "spot": 23642.81
+          },
+          "decision_premium_bps": 98.46122351784726,
+          "entry_component": 25.010255680391335,
+          "stress": {
+            "net": -54.430103689737734,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -7.657141214144902
+        },
+        "BTCUSD_230630": {
+          "base": {
+            "fees": 7.573685595739636,
+            "gross": 17.232308935764195,
+            "held_ms": 5183700000,
+            "minimum_margin_ratio": 19.989061941324042,
+            "net": -16.38555672002076,
+            "observed_drawdown": 0.015787302517206895,
+            "opportunity_cost": 24.54913145923854,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4950486008056032
+          },
+          "decision": {
+            "decision_bar": 1682927700000,
+            "enter": false,
+            "expected_net": -18.887492485512364,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 28797.6,
+            "spot": 28629.09
+          },
+          "decision_premium_bps": 58.85971227167941,
+          "entry_component": 14.327924209736608,
+          "stress": {
+            "net": -54.61708425348479,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 2.904384726027387
+        },
+        "BTCUSD_230929": {
+          "base": {
+            "fees": 7.373265775686952,
+            "gross": 36.04439023585746,
+            "held_ms": 5183700000,
+            "minimum_margin_ratio": 19.989725285577844,
+            "net": 2.7744506887229363,
+            "observed_drawdown": 0.03916887852477039,
+            "opportunity_cost": 24.406527361423997,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.490146410023499
+          },
+          "decision": {
+            "decision_bar": 1690790100000,
+            "enter": false,
+            "expected_net": -3.6526192824374952,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 29726.6,
+            "spot": 29373.61
+          },
+          "decision_premium_bps": 120.17249497082494,
+          "entry_component": 28.767010350908006,
+          "stress": {
+            "net": -35.094003281836194,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 7.277379884949586
+        },
+        "BTCUSD_231229": {
+          "base": {
+            "fees": 7.722998367986195,
+            "gross": 26.893780880126087,
+            "held_ms": 5183700000,
+            "minimum_margin_ratio": 19.987031964390724,
+            "net": -6.656095175658265,
+            "observed_drawdown": 0.026177035418060504,
+            "opportunity_cost": 24.342454461013556,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4844232267842017
+          },
+          "decision": {
+            "decision_bar": 1698652500000,
+            "enter": true,
+            "expected_net": 1.8986499463307993,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 34681.4,
+            "spot": 34193.46
+          },
+          "decision_premium_bps": 142.6998028277926,
+          "entry_component": 35.25458078204813,
+          "stress": {
+            "net": -44.786244553677534,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -8.360799901921956
+        }
+      },
+      "status": "NO_GO_BASE",
+      "stress_cash_range_same_paths": [
+        -2.1634041312418706,
+        31.019434082357158
+      ],
+      "stress_range": [
+        -50.97498544273003,
+        -17.52378099123598
+      ]
+    },
+    "90": {
+      "common_scenario_net_range": [
+        0.0,
+        0.0
+      ],
+      "decision_count": 0,
+      "development": {
+        "all_stress_positive": false,
+        "base_positive": false,
+        "base_without_best": 0.0,
+        "interpretation": "CONDITIONAL_DEVELOPMENT_ONLY_NO_PROMOTION",
+        "stress_without_best": 0.0,
+        "supported": false
+      },
+      "policy_attribution": {
+        "base": {
+          "capital_charge": 0,
+          "cash_net_same_model_path": 0,
+          "cash_without_best": 0,
+          "executed_episodes": 0,
+          "maximum_observed_model_drawdown": 0
+        },
+        "stress": {
+          "capital_charge": 0,
+          "cash_net_same_model_path": 0,
+          "cash_without_best": 0,
+          "executed_episodes": 0,
+          "maximum_observed_model_drawdown": 0
+        },
+        "zero_friction": {
+          "capital_charge": 0,
+          "cash_net_same_model_path": 0,
+          "cash_without_best": 0,
+          "executed_episodes": 0,
+          "maximum_observed_model_drawdown": 0
+        }
+      },
+      "policy_central": {
+        "base": {
+          "halted": false,
+          "net": 0.0,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": 0.0,
+          "risk_unknown": false
+        },
+        "stress": {
+          "halted": false,
+          "net": 0.0,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": 0.0,
+          "risk_unknown": false
+        },
+        "zero_friction": {
+          "halted": false,
+          "net": 0.0,
+          "paths": [
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230331"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230630"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_230929"
+            },
+            {
+              "status": "NO_ENTRY",
+              "symbol": "BTCUSD_231229"
+            }
+          ],
+          "return_percent": 0.0,
+          "risk_unknown": false
+        }
+      },
+      "quarters": {
+        "BTCUSD_230331": {
+          "base": {
+            "fees": 8.334980878782694,
+            "gross": -10.906819269295738,
+            "held_ms": 7775700000,
+            "minimum_margin_ratio": 19.98233754469599,
+            "net": -57.826582803614656,
+            "observed_drawdown": 0.01754550937369855,
+            "opportunity_cost": 37.08481391252209,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4999687430135964
+          },
+          "decision": {
+            "decision_bar": 1672473300000,
+            "enter": false,
+            "expected_net": -50.01346301713754,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 16539.2,
+            "spot": 16565.09
+          },
+          "decision_premium_bps": -15.629254051743313,
+          "entry_component": -3.249678055151084,
+          "stress": {
+            "net": -109.438601130385,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -7.657141214144902
+        },
+        "BTCUSD_230630": {
+          "base": {
+            "fees": 7.556348307335804,
+            "gross": 34.67390974661339,
+            "held_ms": 7775700000,
+            "minimum_margin_ratio": 19.989061029258615,
+            "net": -10.936525156783318,
+            "observed_drawdown": 0.015778990167542233,
+            "opportunity_cost": 36.5660160311867,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4880705648747607
+          },
+          "decision": {
+            "decision_bar": 1680335700000,
+            "enter": false,
+            "expected_net": -13.53874321127622,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 28793.1,
+            "spot": 28424.99
+          },
+          "decision_premium_bps": 129.50224432796585,
+          "entry_component": 31.769525020585444,
+          "stress": {
+            "net": -61.2021368189653,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 2.904384726027387
+        },
+        "BTCUSD_230929": {
+          "base": {
+            "fees": 7.316860692381706,
+            "gross": 46.76751401427191,
+            "held_ms": 7775700000,
+            "minimum_margin_ratio": 19.989537699690185,
+            "net": 1.5131592520338017,
+            "observed_drawdown": 0.03917441935299105,
+            "opportunity_cost": 36.45163776736474,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4858563024899922
+          },
+          "decision": {
+            "decision_bar": 1688198100000,
+            "enter": false,
+            "expected_net": -5.775151014398112,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 30950.1,
+            "spot": 30459.88
+          },
+          "decision_premium_bps": 160.93957034630347,
+          "entry_component": 39.49013412932245,
+          "stress": {
+            "net": -48.38955943752262,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": 7.277379884949586
+        },
+        "BTCUSD_231229": {
+          "base": {
+            "fees": 8.148429557282318,
+            "gross": 18.762924541020766,
+            "held_ms": 7775700000,
+            "minimum_margin_ratio": 19.983475965293504,
+            "net": -27.508023262395,
+            "observed_drawdown": 0.033989090651313295,
+            "opportunity_cost": 36.63484202621506,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN",
+            "slippage_drag": 1.4876762199187397
+          },
+          "decision": {
+            "decision_bar": 1696060500000,
+            "enter": false,
+            "expected_net": -18.600735794609314,
+            "forecast": "FLAT_SPOT_AND_USD_USDT_PARITY_ASSUMPTION",
+            "future": 27225.6,
+            "spot": 26931.75
+          },
+          "decision_premium_bps": 109.10913698515712,
+          "entry_component": 27.12372444294259,
+          "stress": {
+            "net": -78.43217369737795,
+            "risk_reason": null,
+            "risk_status": "UNKNOWN"
+          },
+          "terminal_conversion": -8.360799901921956
+        }
+      },
+      "status": "NO_GO_NO_TRADES",
+      "stress_cash_range_same_paths": [
+        0,
+        0
+      ],
+      "stress_range": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "independent_confirmation": false,
+  "independent_diagnostic_ledgers": 648,
+  "original_quality": {
+    "actual_gets": 58,
+    "critical_complete": false,
+    "historical_identity": "ASSUMED_NOT_ADMITTED",
+    "quarters": {
+      "BTCUSD_230331": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 25,
+            "mark": null,
+            "spot": 14
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 60,
+            "mark": null,
+            "spot": 14
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 286,
+            "mark": null,
+            "spot": 14
+          }
+        }
+      },
+      "BTCUSD_230630": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 60,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 121,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 176,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      },
+      "BTCUSD_230929": {
+        "30": {
+          "critical_complete": false,
+          "critical_missing": {
+            "future": [
+              1693382100000,
+              1693382700000
+            ],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 479,
+            "mark": 479,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 298,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 1152,
+            "mark": 1152,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 770,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 1152,
+            "mark": 1152,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 1038,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      },
+      "BTCUSD_231229": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 45,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 182,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 272,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      }
+    }
+  },
+  "plan_sha256": "77bea612d498a55c7d1dab8a1e372466a1f958defd198465140c5056fff9ef1e",
+  "policy_vectors": 3,
+  "production_changes": 0,
+  "protected_files": 6594,
+  "public_gets": 78,
+  "qualified_candidates": 0,
+  "quality": {
+    "critical_complete": true,
+    "historical_identity": "ASSUMED_NOT_ADMITTED",
+    "quarters": {
+      "BTCUSD_230331": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 25,
+            "mark": null,
+            "spot": 14
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 60,
+            "mark": null,
+            "spot": 14
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 1
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 16
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 286,
+            "mark": null,
+            "spot": 14
+          }
+        }
+      },
+      "BTCUSD_230630": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 60,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 121,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 176,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      },
+      "BTCUSD_230929": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 305,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 790,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 1058,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      },
+      "BTCUSD_231229": {
+        "30": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 45,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "60": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 182,
+            "mark": null,
+            "spot": 0
+          }
+        },
+        "90": {
+          "critical_complete": true,
+          "critical_missing": {
+            "future": [],
+            "spot": []
+          },
+          "historical_identity_admitted": false,
+          "incomplete_bars": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "missing_path": {
+            "future": 0,
+            "mark": 0,
+            "spot": 0
+          },
+          "risk_path_observed": false,
+          "zero_trade_bars": {
+            "future": 272,
+            "mark": null,
+            "spot": 0
+          }
+        }
+      }
+    }
+  },
+  "response_bytes": 9854630,
+  "status": "NO_SUPPORTED_TERM",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skips": 0,
+    "success": true,
+    "tests": 110
+  },
+  "training_vectors": 0,
+  "web_operations": 1
+}

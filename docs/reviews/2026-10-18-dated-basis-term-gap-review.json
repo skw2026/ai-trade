@@ -1,0 +1,28 @@
+{
+  "failure_id": "341a1982aaf54224b502fbf4687e1e0b",
+  "decision": "retry",
+  "goal": "完成固定2023四季30/60/90日期限的同源输入完整准入，再进行唯一经济批次",
+  "expected": "全部期限的原定决策、入场和退出价格完整，不插值或删季度",
+  "observed": "2023-09到期合约期货和mark月档案各缺2023-08-28至08-31全部1152根，30日期限08-30 07:55/08:05期货价格缺失，首次经济输入冻结失败，0经济尝试",
+  "root_cause_status": "confirmed",
+  "root_cause": "校验正确的官方月档案仅有27日7776行，固定输入装配只读取月文件；同源对应日档案10份均可取得且checksum通过，4日每流1152根完整，额外08-27对照每流288根逐字段一致。故可确认是月档案覆盖缺件而非解析丢行或日期算法错误；供应商月文件遗漏的内部原因UNKNOWN，不作推断。",
+  "evidence": [
+    ".artifacts/dated-basis-term-20261018/input-quality.json",
+    ".artifacts/dated-basis-term-20261018/input-manifest.json",
+    ".artifacts/dated-basis-term-20261018/gap-diagnostic/freeze.json",
+    ".artifacts/dated-basis-term-20261018/gap-diagnostic/diagnosis.json",
+    ".artifacts/dated-basis-term-20261018/gap-diagnostic/reconciled-quality.json",
+    ".artifacts/dated-basis-term-20261018/original/run.py"
+  ],
+  "next_action": "唯一原run.py freeze命令复验；仅改输入装配指向另存的同源逐日恢复版本，旧月输入/原始失败/旧run原件保持并绑定hash。未改经济引擎、时点、成本、风险、期限或通过条件，不将原缺件快照追溯改PASS。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "补齐同一合约同一时点的真实官方记录；无收益查看/择时，没有用插值、缩域或参数修正取得PASS。",
+    "data_feasibility": "10份官方日档案与各checksum全200，两个流均288条重叠完全一致并新增原缺失1152条。新旧文件隔离，零成交仍UNKNOWN。",
+    "method_feasibility": "7项诊断合成测试验证完整日、时间网格、checksum、冲突拒绝、原件不改；恢复的关键覆盖完整，历史认证仍不建立。",
+    "budget_and_exit": "新增20诊断GET，累计78<=80；仍同8小时总预算、3期限、1经济尝试。一次原命令复验，再失败立即停止，不重试HTTP或继续加数据。"
+  }
+}
