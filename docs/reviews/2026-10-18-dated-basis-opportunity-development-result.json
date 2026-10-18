@@ -1,0 +1,418 @@
+{
+  "base": {
+    "benchmark_excess": {
+      "0.06": -10.691622486506338,
+      "0.12": -11.056879296598833
+    },
+    "cash_drawdown_pct": 0.24861424219483627,
+    "cash_net": -10.326365676413843,
+    "cash_return_pct": -0.10326365676413843,
+    "closed_quarters": 1,
+    "cost_share_of_loss": 0.907472144380877,
+    "execution_fees": 7.397418033014727,
+    "financing_cost": 0.0,
+    "gross": -0.9554764723770859,
+    "minimum_margin_ratio": 19.989948453225598,
+    "slippage_drag": 1.9734711710216288,
+    "spot_spend": 2470.7719354519368,
+    "without_best_quarter": 0.0
+  },
+  "candidate_qualified": false,
+  "engineering": {
+    "audit": {
+      "actual_execution_qualified": false,
+      "closed_ledgers": 36,
+      "g4": false,
+      "independent_intention_scans": 4,
+      "post_settlement_bars": 0,
+      "quarter_paths": 144,
+      "risk_bars": 9288,
+      "scenarios": 36,
+      "status": "DECIMAL_RECONSTRUCTION_MATCH"
+    },
+    "formal_failures": 0,
+    "protected_bindings": 7018,
+    "seconds": 1.214059165911749,
+    "tests": {
+      "errors": 0,
+      "failures": 0,
+      "skips": 0,
+      "success": true,
+      "tests": 102
+    }
+  },
+  "first_withdrawal": {
+    "actual_market_outage_established": false,
+    "confirmed_cause": "Frozen rule treats an unobserved execution/liquidity proxy as UNKNOWN; no-trade bar is not missing mark valuation or proof of an empty book",
+    "earliest_failure_layer": "EXECUTION_OBSERVABILITY_AND_WITHDRAWAL_CONTRACT",
+    "entry_utc": "2023-04-01T09:00:00+00:00",
+    "exit_utc": "2023-04-02T06:35:00+00:00",
+    "future_bar_complete": true,
+    "future_bar_present": true,
+    "future_trades": 0,
+    "future_volume": 0,
+    "hard_risk_trigger": false,
+    "held_hours": 21.583333333333332,
+    "mark_bar_complete_positive": true,
+    "next_future_trades": 16,
+    "no_trade_bar_observable_utc": "2023-04-02T06:35:00+00:00",
+    "no_trade_bar_start_utc": "2023-04-02T06:30:00+00:00",
+    "risk_observed_bars": 258,
+    "spot_bar_complete_with_trades": true,
+    "symbol": "BTCUSD_230630",
+    "unavailable_evidence": "Contemporaneous executable bid/ask depth and quote freshness"
+  },
+  "g4": false,
+  "intentions": {
+    "BTCUSD_230331": null,
+    "BTCUSD_230630": {
+      "conditional_forecast_cash": 3.677047182313345,
+      "entry_utc": "2023-04-01T09:00:00+00:00",
+      "executed_in_model": true
+    },
+    "BTCUSD_230929": {
+      "conditional_forecast_cash": 11.759417701177426,
+      "entry_utc": "2023-07-01T09:00:00+00:00",
+      "executed_in_model": false
+    },
+    "BTCUSD_231229": {
+      "conditional_forecast_cash": 1.1495851489457891,
+      "entry_utc": "2023-10-01T06:25:00+00:00",
+      "executed_in_model": false
+    }
+  },
+  "layers": {
+    "confirmation": "NOT_ADMITTED; zero attempts, no meaningful sample-size or Sharpe estimate from one withdrawal",
+    "economics": "Negative early-exit cash, insufficient full-term evidence",
+    "execution": "Conditional OHLC model only; historical order-book availability UNKNOWN",
+    "information": "Conditional opportunity forecasts, not locked returns or independent predictive testing",
+    "input": "Known complete no-trade bar; historical executable quotes/specifications unavailable",
+    "policy": "One first-12 rule, one early withdrawal; later intentions blocked without reentry"
+  },
+  "route_review": {
+    "budget_and_exit": "One accepted economic batch consumed; no rerun, tuning, new data or automatic long observation",
+    "data_feasibility": "Existing OHLC and marks support this withdrawal audit; cannot infer executable depth from trade count",
+    "goal_alignment": "Complete a falsifiable cash-net experiment, not maximize test count",
+    "method_feasibility": "Frozen policy and auditor agree, but automatic withdrawal on a quiet candle prevents a full carry-risk conclusion",
+    "next_recommendation": "Before another payoff batch, separate no trades, stale/missing quotes, and missing valuation; use same-policy executable quote/depth evidence. Do not relabel this failed qualification or delete the UNKNOWN stop.",
+    "rejected_explanations": [
+      "6/12 percent benchmark charged to cash",
+      "8 percent hard stop",
+      "missing mark bar",
+      "simulation crash"
+    ],
+    "unresolved_explanations": [
+      "Actual empty/thin book versus no taker trades",
+      "full-term cash profitability under a separately justified observable execution model"
+    ]
+  },
+  "scenario_summaries": [
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b-25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b-25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b-25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b0_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b0_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b0_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h0_b25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b-25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b-25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b-25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b0_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b0_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b0_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -10.326365676413843,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "base_h8_b25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b-25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b-25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b-25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b0_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b0_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b0_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h0_b25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b-25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b-25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b-25_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b0_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b0_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b0_m60",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b25_m0",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b25_m5",
+      "uncertain": true
+    },
+    {
+      "cash_net": -25.608835421742697,
+      "closed_quarters": 1,
+      "halted": false,
+      "id": "stress_h8_b25_m60",
+      "uncertain": true
+    }
+  ],
+  "scope": {
+    "account_access": 0,
+    "confirmation_attempts": 0,
+    "deployments": 0,
+    "market_payoff_batches": 1,
+    "market_requests": 0,
+    "operator_reduce_only_unchanged": true,
+    "orders": 0,
+    "training_vectors": 0,
+    "waiting_configured": false
+  },
+  "source_hashes": {
+    ".artifacts/dated-basis-opportunity-development-20261018/audit.json": "a830a069b8003c5c0ae44b10d68dada4e1535f5e92e3c2317b6b67508085b894",
+    ".artifacts/dated-basis-opportunity-development-20261018/execution-freeze.json": "c4e1611c6b159fcce5f9ffae1b642161f11a6be8e6b9d23b7c2b704714b7e3e6",
+    ".artifacts/dated-basis-opportunity-development-20261018/first-withdrawal-source.json": "65dc1b7e6e41e0b29ab8a22eddd27d90dcefea835f47522bc8f0b59edf47d5d0",
+    ".artifacts/dated-basis-opportunity-development-20261018/result.json": "1485562cf0a5b1949314cd6ce12fc1fa09b78cf46c706412aba52de58ce01aaf",
+    "/Users/sk.wang/Projects/c++/ai-trade/.artifacts/dated-basis-opportunity-development-20261018/explain.py": "767529c031d7d7882dc8915d8bf46db2f65cf9c6fe01a9a392a89b2dc165421b"
+  },
+  "status": "DATA_INSUFFICIENT",
+  "stress": {
+    "benchmark_excess": {
+      "0.06": -25.975042586964246,
+      "0.12": -26.341249752185792
+    },
+    "cash_drawdown_pct": 0.36768837708761565,
+    "cash_net": -25.608835421742697,
+    "cash_return_pct": -0.256088354217427,
+    "closed_quarters": 1,
+    "cost_share_of_loss": 0.9626895773805295,
+    "execution_fees": 14.785992092822507,
+    "financing_cost": 0.0,
+    "gross": -0.9554764723770859,
+    "minimum_margin_ratio": 19.97988080787778,
+    "slippage_drag": 9.867366856542503,
+    "spot_spend": 2477.2005925411277,
+    "without_best_quarter": 0.0
+  },
+  "summary": {
+    "base_central_cash": -10.326365676413843,
+    "base_closed_quarters": 1,
+    "candidate_qualified": false,
+    "economic_batch_count": 1,
+    "g4": false,
+    "halted_scenarios": 0,
+    "independent_confirmation_attempts": 0,
+    "policy_count": 1,
+    "pressure_cash_max": -25.608835421742697,
+    "pressure_cash_min": -25.608835421742697,
+    "status": "DATA_INSUFFICIENT",
+    "stress_central_cash": -25.608835421742697,
+    "stress_closed_quarters": 1,
+    "training_vectors": 0,
+    "uncertain_scenarios": 36,
+    "unresolved_scenarios": 0
+  }
+}
