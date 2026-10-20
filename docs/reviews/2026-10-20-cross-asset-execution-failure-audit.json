@@ -1,0 +1,32 @@
+{
+  "failure_id": "8495cbb5832b4f9f97d60b540fbc08d8",
+  "decision": "retry",
+  "goal": "Complete the same frozen seven-task development batch, independently recognizing failures as failures",
+  "expected": "Every saved trace has independently verified intents, money, risk and stop provenance; incomplete execution is rejected economically",
+  "observed": "Five paired tasks passed full audit. The sixth, delay-7, preserved 0.1 SOL in both books after the request+5-minute exit deadline. Both individual book audits passed, but the final linked-stop assertion rejected two PEER_PATH_REJECTED labels despite both independently proven exit failures.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The pair-level auditor assumed every linked stop had a non-peer hard-stop root. The frozen simulation also links on execution insufficiency, including simultaneous failures. The auditor omitted that branch. The trace has explicit independently checked RESIDUAL_EXPOSURE_UNCLOSED events at minute 191529, matching the group stops, and does not erase exposure. The label alone is not accepted as proof.",
+  "evidence": [
+    ".artifacts/cross-asset-relative-strength-20261020/delay-7.json",
+    ".artifacts/cross-asset-relative-strength-20261020/pre-execution-failure-audit/failed-gate.json",
+    ".artifacts/cross-asset-relative-strength-20261020/pre-execution-failure-audit/audit_cross_asset.py",
+    ".artifacts/cross-asset-relative-strength-20261020/execution-audit-correction.json"
+  ],
+  "correction_sha256": "323c407fada5a10375eda6b55e42a77177cf999820e5a2b98f2208bb7a53dd9a",
+  "next_action": "One original-command retry first runs all synthetic regressions, audits the unchanged delay-7 trace with an exact execution-failure provenance branch, reuses five hash-bound prior audits and six immutable snapshots, then computes only the previously unrun delay-14 task. No existing simulation, selection, trade, cash flow or parameter is replayed or changed.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "An independent auditor must be able to confirm a real execution failure. Confirmation remains rejection, not successful execution or profitability.",
+    "data_feasibility": "The complete three-asset input and all six existing snapshots remain hash-bound. No new input or account operation is required.",
+    "method_feasibility": "New linkage accepts only a same-minute residual failure reconstructed by the independent per-book deadline, quantity and order replay. Two unexplained peer labels and wrong-clock causes still fail. The engine, risk, costs, selection and original money are unchanged.",
+    "budget_and_exit": "Same one market attempt, three vectors, at most seven paired tasks and fourteen books. Original 3600-second cumulative budget conservatively includes diagnosis and this retry, within the original four-hour phase. The final missing task is delay-14 only. Any unresolved retry failure blocks the route without another rerun."
+  },
+  "roundtable_review": {
+    "economic": "Normal 7-day and 14-day paths already fail hard risk. Recording the delayed baseline's residual preserves an additional failure; no new qualification can be obtained by repairing this audit branch.",
+    "statistical": "The H1 selection of 14 days is unchanged and bound to original prefix hashes. All history remains development; the missing predeclared latency task is not a new model selection attempt.",
+    "engineering": "Root cause is a missing audit-state transition, not a dead market input or a justification to extend liquidation time. Preserve the failed gate, old auditor and snapshots; add adversarial tests for simultaneous failure and fabricated linkage."
+  }
+}

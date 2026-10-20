@@ -1,0 +1,26 @@
+{
+  "failure_id": "ffb2fb8f678e448b8ac8ecc2f49598ed",
+  "decision": "retry",
+  "goal": "Validate three-asset execution and independent audit before any economic batch",
+  "expected": "All 38 synthetic tests and exact causal intent binding pass",
+  "observed": "One exact-intent failure and six downstream audit errors: 12.5 versus 12.500 in the same BTC quantity field",
+  "root_cause_status": "confirmed",
+  "root_cause": "Decimal integral division can retain a positive exponent. Multiplication by quantity step then emits fewer trailing zeros than the independently computed integer lot count. Values are exactly equal but the order intent has no canonical step-scale serialization.",
+  "evidence": [
+    ".artifacts/cross-asset-relative-strength-20261020/validation-state.json",
+    ".artifacts/cross-asset-relative-strength-20261020/pre-decimal-scale/cross_asset_relative_strength.py",
+    ".artifacts/cross-asset-relative-strength-20261020/pre-decimal-scale/audit_cross_asset.py",
+    ".artifacts/cross-asset-relative-strength-20261020/pre-decimal-scale/test_cross_asset_model.py"
+  ],
+  "next_action": "Quantize the already lot-rounded requested quantity to its exact step exponent, retaining exact intent equality and the original test command for one retry",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Canonical execution intent is necessary to bind independent accounting; this does not optimize a strategy result",
+    "data_feasibility": "S1 already verified 1056 new responses, complete three-asset minute grids and exact daily prices; no new download is needed",
+    "method_feasibility": "Decimal quantize at the existing quantity step changes only text scale after floor rounding, not quantity, direction, costs, risk or audit acceptance",
+    "budget_and_exit": "Within the accepted 10-hour implementation stage; no market attempts consumed. One original-command retry only; a second unresolved failure requires route reassessment"
+  }
+}
