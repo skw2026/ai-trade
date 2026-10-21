@@ -1,0 +1,28 @@
+{
+  "failure_id": "ca3360a5f67047d6a85d6596e773731c",
+  "decision": "retry",
+  "goal": "交付已接受的离线订单链桥接，同时保留旧研究证据和旧失败",
+  "expected": "旧绑定逐字可核，只有明确授权的新增离线测试注册发生版本演进",
+  "observed": "19合成场景与109 Python测试通过；收尾旧保全helper在CMakeLists.txt工作区字节比较失败",
+  "root_cause_status": "confirmed",
+  "root_cause": "本轮工程阶段误复用研究阶段假设所有live源文件不可变的保全helper。8070项中唯一变化为CMakeLists.txt新增18行离线测试注册；原文件仍在父提交，SHA256与原绑定完全一致。未发生原研究证据丢失或交易源码修改。",
+  "evidence": [
+    ".artifacts/offline-intent-bridge-20261021/validation-state.json",
+    ".artifacts/offline-intent-bridge-20261021/stage.failed.py",
+    ".artifacts/offline-intent-bridge-20261021/CMakeLists.parent.txt",
+    ".artifacts/offline-intent-bridge-20261021/source-transition.json",
+    ".artifacts/open-market-learning-20261019/protected.json",
+    ".artifacts/offline-intent-bridge-20261021/build/Testing/Temporary/LastTest.log"
+  ],
+  "next_action": "只修本轮私有保全入口：8070原绑定和git绑定全部核验，唯一CMake旧字节同时从原git对象及本轮私有归档核对，当前版本精确hash绑定且仅18行BUILD_TESTING加法；其他8069工作区绑定及81+34追加项保持。旧checker/清单/gate不改，也不声称旧helper在新工作区通过。原命令唯一复验，不重跑收益或订单场景。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "仍交付同一离线桥接；构建注册属于原已授权工程范围，不扩大到生产或经济验证",
+    "data_feasibility": "只读已完整核对8070项：8069当前文件一致，唯一CMake父提交SHA与旧绑定一致，原件可恢复且已逐字归档",
+    "method_feasibility": "用新阶段具名源版本迁移核验证据可用性，保留全部旧清单和helper，不伪装旧研究合同在修改后的工作区重新PASS",
+    "budget_and_exit": "原4小时截止18:18 UTC不延长；仅一次原证据核验复验，再失败停止并重审路线，不续经济批次"
+  }
+}

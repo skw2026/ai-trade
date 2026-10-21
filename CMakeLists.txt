@@ -161,6 +161,18 @@ if(BUILD_TESTING)
   add_test(NAME execution_ordering_test COMMAND execution_ordering_test)
   set_tests_properties(execution_ordering_test PROPERTIES TIMEOUT 30)
 
+  # This bridge is offline-only: no production linkage or live adapter API.
+  add_executable(offline_intent_bridge_test
+    tests/test_offline_intent_bridge.cpp src/research/offline_intent_bridge.cpp
+    src/exchange/mock_exchange_adapter.cpp src/execution/async_executor.cpp
+    src/execution/execution_engine.cpp src/oms/order_manager.cpp
+    src/oms/account_state.cpp src/storage/wal_store.cpp)
+  target_include_directories(offline_intent_bridge_test PRIVATE src)
+  find_package(Threads REQUIRED)
+  target_link_libraries(offline_intent_bridge_test PRIVATE Threads::Threads)
+  add_test(NAME offline_intent_bridge_test COMMAND offline_intent_bridge_test)
+  set_tests_properties(offline_intent_bridge_test PROPERTIES TIMEOUT 30 LABELS "offline;execution")
+
   add_executable(financial_risk_contract_test tests/test_financial_risk_contract.cpp)
   target_link_libraries(financial_risk_contract_test PRIVATE ai_trade_system)
   add_test(NAME financial_risk_contract_test COMMAND financial_risk_contract_test)
@@ -180,6 +192,12 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME offline_intent_policy_parity_test
+             COMMAND ${CMAKE_COMMAND} -E env
+                     "OFFLINE_INTENT_BRIDGE_BINARY=$<TARGET_FILE:offline_intent_bridge_test>"
+                     ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_offline_intent_bridge.py)
+    set_tests_properties(offline_intent_policy_parity_test PROPERTIES
+                         TIMEOUT 30 LABELS "offline;execution;synthetic")
     add_test(NAME runtime_net_learning_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_runtime_net_learning.py
                      --driver $<TARGET_FILE:runtime_learning_driver>)

@@ -11,6 +11,21 @@
 
 ## 开始与阶段边界
 
+- 2026-10-21 用户“执行下一步”后完成4小时内的离线订单链桥接，见
+  `docs/reviews/2026-10-21-offline-intent-bridge-result.md`。新增组件仅链接
+  测试目标，冻结(0,-4)意图接现有Mock/ExecutionEngine/AsyncExecutor/
+  OMS/Account/WAL；19合成故障场景、1029动作跨语言等价、7选定CTest及
+  109不同Python测试无skip。OFFLINE_ORDER_LIFECYCLE_SUPPORTED，仅合成
+  工程，无新收益/行情/训练/账户/部署，G4与Demo禁开仓不变。旧WAL六位
+  有效精度超范围拒绝，cap减仓后补回语义与原参考账不同，真实bar/资金费/
+  盘中风险/双账/结算尚未接入，不移植旧+4.6952%收益。下一先做高精度
+  WAL及逐事件语义对齐，再单独冻结完整闭环经济验证，当前未开始或等待。
+  保全1次失败根因为新工程CMake注册与旧live文件冻结假设冲突；原命令
+  唯一复验通过，旧checker/清单/gate不改。8070原绑定中8069当前一致，
+  CMake旧字节由父提交及私有归档双路核验，新18行仅BUILD_TESTING；另
+  81+34保护项及六草稿保持。不是旧helper在新工作区PASS。main skip-ci
+  工程交付核精确SHA及零Actions/部署，不续经济批次或生产接入。
+
 - 2026-10-21 用户接受上轮4小时执行语义纠偏建议并要求“执行下一阶段优化”，
   已完成`docs/plans/2026-10-21-fixed-intent-delay.md`的唯一固定动作延迟实验。
   结果见`docs/reviews/2026-10-21-fixed-intent-delay-result.md`：基础+5.0819%、
