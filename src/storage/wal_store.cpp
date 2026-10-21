@@ -7,6 +7,8 @@
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
+#include <limits>
+#include <locale>
 #include <sstream>
 #include <sys/file.h>
 #include <unistd.h>
@@ -87,6 +89,9 @@ bool IsRecoverableCheckpointOnlyCorruption(const std::string& line) {
 std::string SerializeIntent(const OrderIntent& order) {
   // INTENT2 persists candidate lineage; ParseIntent still accepts legacy INTENT.
   std::ostringstream oss;
+  // Preserve the original binary double on recovery; record schema is unchanged.
+  oss.imbue(std::locale::classic());
+  oss.precision(std::numeric_limits<double>::max_digits10);
   oss << "INTENT2"
       << '\t'
       << order.client_order_id
@@ -124,6 +129,8 @@ std::string SerializeIntent(const OrderIntent& order) {
 std::string SerializeFillV3(const FillEvent& fill) {
   // V3 additionally persists maker/taker identity for restart-safe economics.
   std::ostringstream oss;
+  oss.imbue(std::locale::classic());
+  oss.precision(std::numeric_limits<double>::max_digits10);
   oss << "FILL3"
       << '\t'
       << fill.fill_id

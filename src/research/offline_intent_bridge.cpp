@@ -45,13 +45,6 @@ bool SameFill(const FillEvent& a, const FillEvent& b) {
       a.symbol == b.symbol && a.direction == b.direction && SameNumber(a.qty, b.qty) &&
       SameNumber(a.price, b.price) && SameNumber(a.fee, b.fee) && a.liquidity == b.liquidity;
 }
-// Existing WAL uses six significant digits for order/fill numeric fields.
-// This bridge refuses unsupported precision rather than silently losing it.
-bool WalExact(double value) {
-  std::ostringstream out;
-  out << value;
-  return SameNumber(std::stod(out.str()), value);
-}
 }  // namespace
 
 OfflineIntentBridge::OfflineIntentBridge(MockExchangeAdapter& adapter,
@@ -69,6 +62,7 @@ OfflineIntentBridge::OfflineIntentBridge(MockExchangeAdapter& adapter,
     std::string error;
     Need(wal_.Initialize(&error), "WAL_INITIALIZE");
     Recover();
+    if (risk_drawdown_ >= .08 && !stopped_) LatchRiskStop();
     if (operator_reduce_only && !operator_locked_) LatchOperatorReduceOnly();
     if (stopped_ || operator_locked_) executor_.LatchSafetyWithdrawal();
     executor_.Start();
@@ -160,6 +154,7 @@ void OfflineIntentBridge::FailClosed(const char* reason) {
 }
 
 void OfflineIntentBridge::Recover() {
+  std::vector<std::string> account_events;
   if (std::filesystem::exists(journal_path_)) {
     std::ifstream input(journal_path_, std::ios::binary);
     std::string bytes((std::istreambuf_iterator<char>(input)), {});
@@ -167,18 +162,23 @@ void OfflineIntentBridge::Recover() {
     Need(bytes.empty() || bytes.back() == '\n', "TORN_STATE");
     std::istringstream lines(bytes);
     std::string line;
+    Need(static_cast<bool>(std::getline(lines, line)) && line == "V 2",
+         "LEGACY_OFFLINE_JOURNAL_REQUIRES_EXPLICIT_MIGRATION");
     while (std::getline(lines, line)) {
       if (line == "R") { stopped_ = true; target_ = goal_qty_ = 0; }
       else if (line == "O") operator_locked_ = true;
       else if (line == "F") faulted_ = true;
-      else if (line.rfind("P ", 0) == 0) {
+      else if (line.rfind("C ", 0) == 0) {
         std::istringstream row(line.substr(2));
-        double peak = 0;
+        double goal = 0;
         std::string extra;
-        Need(static_cast<bool>(row >> peak) && !(row >> extra) &&
-             std::isfinite(peak) && peak >= risk_peak_, "BAD_RISK_PEAK");
-        risk_peak_ = peak;
+        Need(static_cast<bool>(row >> goal) && !(row >> extra) && std::isfinite(goal) &&
+             std::fabs(goal) <= std::fabs(goal_qty_) && goal * goal_qty_ >= 0,
+             "BAD_CAP_REDUCTION");
+        goal_qty_ = goal;
       }
+      else if (line.rfind("M ",0)==0 || line.rfind("H ",0)==0 ||
+               line.rfind("U ",0)==0 || line.rfind("E ",0)==0) account_events.push_back(line);
       else {
         std::istringstream row(line);
         std::string kind, extra;
@@ -189,6 +189,10 @@ void OfflineIntentBridge::Recover() {
         ApplyBar(ts, xs, xl, price);
       }
     }
+  } else {
+    Need(std::filesystem::file_size(std::filesystem::path(journal_path_).parent_path()/"orders.wal") == 0,
+         "MISSING_EVENT_JOURNAL");
+    AppendState("V 2");
   }
   std::unordered_set<std::string> orders, fill_ids;
   std::unordered_map<std::string, OrderIntent> intents;
@@ -212,17 +216,96 @@ void OfflineIntentBridge::Recover() {
          (intent.direction == 1 || intent.direction == -1), "RECOVERY_ORDER_INPUT");
     Need(oms_.RegisterIntent(intent), "RECOVERY_ORDER");
   }
-  for (const auto& fill : fills) {
-    const auto* order = oms_.Find(fill.client_order_id);
-    Need(order && fill.symbol == kSymbol && fill.direction == order->intent.direction &&
-         std::isfinite(fill.qty) && fill.qty > 0 && std::isfinite(fill.price) && fill.price > 0 &&
-         std::isfinite(fill.fee) && order->filled_qty + fill.qty <= order->intent.qty + kEps,
-         "RECOVERY_UNKNOWN_OR_INVALID_FILL");
-    Need(fills_.emplace(fill.fill_id, fill).second, "RECOVERY_DUPLICATE_FILL");
-    oms_.OnFill(fill);
-    account_.ApplyFill(fill);
+  std::map<std::string, FillEvent> recorded;
+  for (const auto& fill : fills) Need(recorded.emplace(fill.fill_id,fill).second,"DUPLICATE_WAL_FILL");
+  for (const auto& event : account_events) {
+    if (event.rfind("E ",0)==0) {
+      const auto found=recorded.find(event.substr(2));
+      Need(found!=recorded.end(),"EVENT_WITHOUT_WAL_FILL");
+      ApplyRecordedFill(found->second);
+    } else ApplyAccountEvent(event);
   }
+  // A crash between durable WAL and its ordered receipt has unknown chronology.
+  // Do not infer whether funding occurred before or after that fill.
+  Need(fills_.size()==recorded.size(),"WAL_FILL_WITHOUT_ORDERED_RECEIPT");
   ready_ = false;  // A recovered WAL never grants permission to send by itself.
+}
+
+void OfflineIntentBridge::Observe(double high, double low) {
+  Need(std::isfinite(high) && std::isfinite(low) && low > 0 && high >= low,"MARK_RANGE");
+  const double qty=account_.position_qty(kSymbol);
+  const double cash=account_.cash_usd()-qty*account_.avg_entry_price(kSymbol);
+  const double a=cash+qty*high, b=cash+qty*low;
+  Need(std::isfinite(a) && std::isfinite(b),"NONFINITE_EQUITY");
+  risk_peak_=std::max({risk_peak_,a,b});
+  risk_drawdown_=std::max(risk_drawdown_,1-std::min(a,b)/risk_peak_);
+}
+
+void OfflineIntentBridge::ApplyAccountEvent(const std::string& record) {
+  std::istringstream row(record);
+  std::string kind,extra;
+  row >> kind;
+  if (kind=="H") {
+    double high=0,low=0;
+    Need(static_cast<bool>(row>>high>>low) && !(row>>extra),"BAD_RANGE_EVENT");
+    Observe(high,low);
+    return;
+  }
+  double mark=0,rate=0;
+  std::int64_t ts=0;
+  if (kind=="U") {
+    Need(static_cast<bool>(row>>ts>>rate>>mark) && ts>=0 && ts%300000==0 &&
+         std::isfinite(rate) && (funding_events_.empty() || ts>funding_events_.rbegin()->first),
+         "BAD_FUNDING_EVENT");
+  } else Need(kind=="M" && static_cast<bool>(row>>mark),"BAD_MARK_EVENT");
+  Need(!(row>>extra) && std::isfinite(mark) && mark>0,"BAD_ECONOMIC_EVENT");
+  account_.OnMarket(MarketEvent{.symbol=kSymbol,.price=mark,.mark_price=mark});
+  if (kind=="U") {
+    account_.ApplyFunding(kSymbol,rate,true);
+    funding_events_.emplace(ts,std::make_pair(rate,mark));
+  }
+  Observe(mark,mark);
+}
+
+void OfflineIntentBridge::Mark(double mark) {
+  Need(std::isfinite(mark) && mark>0,"MARK_PRICE");
+  std::ostringstream line; line<<std::setprecision(17)<<"M "<<mark;
+  AppendState(line.str()); ApplyAccountEvent(line.str());
+  if (risk_drawdown_>=.08) LatchRiskStop();
+}
+
+void OfflineIntentBridge::Funding(std::int64_t ts,double rate,double mark) {
+  Need(ts>=0 && ts%300000==0 && std::isfinite(rate) && std::isfinite(mark) && mark>0,
+       "FUNDING_INPUT");
+  const auto found=funding_events_.find(ts);
+  if (found!=funding_events_.end()) {
+    if (found->second!=std::make_pair(rate,mark)) FailClosed("CONFLICTING_FUNDING");
+    return;
+  }
+  Need(funding_events_.empty() || ts>funding_events_.rbegin()->first,"FUNDING_ORDER");
+  std::ostringstream line; line<<std::setprecision(17)<<"U "<<ts<<' '<<rate<<' '<<mark;
+  AppendState(line.str()); ApplyAccountEvent(line.str());
+  if (risk_drawdown_>=.08) LatchRiskStop();
+}
+
+void OfflineIntentBridge::ObserveRange(double high,double low) {
+  Need(std::isfinite(high) && std::isfinite(low) && low>0 && high>=low,"MARK_RANGE");
+  std::ostringstream line; line<<std::setprecision(17)<<"H "<<high<<' '<<low;
+  AppendState(line.str()); ApplyAccountEvent(line.str());
+  if (risk_drawdown_>=.08) LatchRiskStop();
+}
+
+void OfflineIntentBridge::ApplyRecordedFill(const FillEvent& fill) {
+  const auto* order=oms_.Find(fill.client_order_id);
+  Need(order && fill.symbol==kSymbol && fill.direction==order->intent.direction &&
+       std::isfinite(fill.qty) && fill.qty>0 && std::isfinite(fill.price) && fill.price>0 &&
+       std::isfinite(fill.fee) && order->filled_qty+fill.qty<=order->intent.qty+kEps,
+       "RECOVERY_UNKNOWN_OR_INVALID_FILL");
+  Need(fills_.emplace(fill.fill_id,fill).second,"RECOVERY_DUPLICATE_FILL");
+  oms_.OnFill(fill);
+  account_.ApplyFill(fill,true);
+  const double mark=account_.mark_price(kSymbol);
+  Observe(mark,mark);
 }
 
 void OfflineIntentBridge::PumpResults() {
@@ -255,14 +338,13 @@ void OfflineIntentBridge::OnFill(const FillEvent& fill) {
       fill.fill_id.find_first_of(" \t\r\n") == std::string::npos &&
       fill.direction == order->intent.direction && std::isfinite(fill.qty) &&
       fill.qty > 0 && std::isfinite(fill.price) && fill.price > 0 &&
-      std::isfinite(fill.fee) && order->filled_qty + fill.qty <= order->intent.qty + kEps &&
-      WalExact(fill.qty) && WalExact(fill.price) && WalExact(fill.fee);
+      std::isfinite(fill.fee) && order->filled_qty + fill.qty <= order->intent.qty + kEps;
   if (!valid) FailClosed("INVALID_OR_UNKNOWN_FILL");
   std::string error;
   if (!wal_.AppendFill(fill, &error)) { ready_ = false; throw std::runtime_error("FILL_WAL"); }
-  fills_.emplace(fill.fill_id, fill);
-  oms_.OnFill(fill);
-  account_.ApplyFill(fill);
+  AppendState("E "+fill.fill_id);
+  ApplyRecordedFill(fill);
+  if (risk_drawdown_>=.08) LatchRiskStop();
 }
 
 bool OfflineIntentBridge::Reconcile() {
@@ -313,24 +395,22 @@ void OfflineIntentBridge::CancelPending() {
   }
 }
 
-bool OfflineIntentBridge::Drive(double price) {
+bool OfflineIntentBridge::Drive(double price,double mark) {
   Need(std::isfinite(price) && price > 0, "EXECUTION_PRICE");
   PumpResults();
   if (faulted_) return false;
-  account_.OnMarket(MarketEvent{.ts_ms = std::max<std::int64_t>(0, timestamp_),
-                              .symbol = kSymbol, .price = price, .mark_price = price});
-  if (account_.equity_usd() > risk_peak_) {
-    std::ostringstream record;
-    record << std::setprecision(17) << "P " << account_.equity_usd();
-    AppendState(record.str());
-    risk_peak_ = account_.equity_usd();
-  }
-  if ((risk_peak_ - account_.equity_usd()) / risk_peak_ >= .08) LatchRiskStop();
+  if (mark==0) mark=price;
+  Mark(mark);
   double desired = stopped_ ? 0 : goal_qty_;
   const double actual = account_.position_qty(kSymbol);
   if (operator_locked_) desired = actual > 0 ? std::clamp(desired, 0.0, actual)
                                             : std::clamp(desired, actual, 0.0);
-  const double cap = std::fabs(RoundQty(2500 / price));
+  const double cap = std::fabs(RoundQty(2500 / std::max(price,mark)));
+  if (std::fabs(goal_qty_)>cap) {
+    const double capped=std::copysign(cap,goal_qty_);
+    std::ostringstream line; line<<std::setprecision(17)<<"C "<<capped;
+    AppendState(line.str()); goal_qty_=capped;
+  }
   desired = std::clamp(desired, -cap, cap);
   if (oms_.HasPendingNetPositionOrders()) {
     const double projected = actual + oms_.PendingNetPositionRemainingQtyForSymbol(kSymbol);
@@ -353,7 +433,6 @@ bool OfflineIntentBridge::Drive(double price) {
     return out.str();
   })());
   if (intent->qty < .001) return false;
-  Need(WalExact(intent->qty) && WalExact(price), "WAL_PRECISION_UNSUPPORTED");
   intent->client_order_id = "offline-" + std::to_string(++order_sequence_);
   intent->decision_id = "intent-" + std::to_string(version_);
   intent->candidate_id = "synthetic-only";

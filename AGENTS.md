@@ -11,6 +11,21 @@
 
 ## 开始与阶段边界
 
+- 2026-10-21 用户在WAL精度／逐事件核对建议后回复ok，完成
+  `docs/plans/2026-10-21-offline-execution-semantics.md`，结果见同名result报告。
+  OFFLINE_EXECUTION_SEMANTICS_SUPPORTED：订单／成交WAL用max_digits10，
+  旧格式可读不改历史；cap检查trade/mark并持久减目标、不补回。离线V2事件
+  日志恢复成交／资金费／标记的顺序，成交保留mark，资金费按实际持仓去重；
+  旧研究日志不自动迁移，双日志缺口fail-closed，不冒充原子事务。26原生
+  场景、1029动作一致、7选定CTest及114不同Python测试通过，无skip，非全量。
+  1次出清夹具错误已具名复盘／原命令唯一复验：2600仓位受2500单笔上限，
+  应分0.048+0.002两笔减仓，非重开仓；不改引擎／限额。8221旧绑定按版本
+  核验，6源码身份保留git+私有副本，旧gate/参考账/六草稿不改。0行情/训练/
+  收益回放/账户/部署，G4未过、Demo禁开仓不变。桥接仅测试目标；共享WAL
+  源码改动未部署。main skip-ci核精确SHA/零Actions。下一是完整2024正常/
+  固定5分钟延迟闭环四账唯一批次；先绑定真实bar/资金费触线退出时钟及双账
+  驱动，再冻结执行，尚未启动或等待；本轮合成账不冒充完整历史/盈利证据。
+
 - 2026-10-21 用户“执行下一步”后完成4小时内的离线订单链桥接，见
   `docs/reviews/2026-10-21-offline-intent-bridge-result.md`。新增组件仅链接
   测试目标，冻结(0,-4)意图接现有Mock/ExecutionEngine/AsyncExecutor/

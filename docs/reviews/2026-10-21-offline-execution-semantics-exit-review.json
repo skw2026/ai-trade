@@ -1,0 +1,28 @@
+{
+  "failure_id": "c204ee0e8fbd48658c9ab9b92b53e19f",
+  "decision": "retry",
+  "goal": "离线订单与参考账逐事件一致，风险出清不留下可执行残仓",
+  "expected": "相关7项CTest全部通过，风险退出最终为零且永久禁止新增仓位",
+  "observed": "6项通过，native新增IntrabarStop在第一次减仓后误断言已全平；报risk terminal reopened。Python逐事件比较已通过。",
+  "root_cause_status": "confirmed",
+  "root_cause": "既有ExecutionEngine每笔名义上限2500，0.05 BTC在52000退出时名义2600；第一笔按0.001网格只减0.048，余0.002。测试把一次Drive等同整仓出清；终态X夹具也同样只Drive一次。正常B事件夹具已有同开盘有界多笔执行，故Python风险路径通过。非重新开仓，不改变核心订单上限。",
+  "evidence": [
+    ".artifacts/offline-execution-semantics-20261021/ctest.failed.log",
+    ".artifacts/offline-execution-semantics-20261021/offline_intent_bridge.failed",
+    "src/execution/execution_engine.cpp:单笔min(total_delta,max_order_notional_usd)",
+    "tests/test_offline_intent_bridge.cpp:IntrabarStop及EventStream终态X"
+  ],
+  "next_action": "测试明确验证第一笔后0.002残仓和第二笔reduce-only全平；X终态采用已有B同开盘最多3笔的有界排空，并明确检查最后空仓。补高于单笔上限的终态双成本Decimal用例。不改生产引擎、成本、风险或参考账。限定重建后原7项CTest命令唯一复验。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "终态完整账户和可执行订单限额是原验收；必须验证分笔出清而不是把断言改成允许残仓。",
+    "data_feasibility": "固定0.05、52000、2500、0.001的合成输入，原源码和失败二进制已归档，无需行情。",
+    "method_feasibility": "第一笔0.048、第二笔0.002，各不超过2500，均reduce-only；同价格线性手续费／滑点在Decimal参考账可独立比较。真实分笔延迟风险仍不由此合成验证证明。",
+    "budget_and_exit": "原4小时预算内，一次限定重建和一次相同CTest命令复验；失败保留BLOCKED，不反复重跑或扩经济次数。"
+  },
+  "repair_build_argv": ["cmake", "--build", ".artifacts/offline-execution-semantics-20261021/build", "--parallel", "8", "--target", "offline_intent_bridge_test"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

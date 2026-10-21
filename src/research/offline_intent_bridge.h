@@ -34,11 +34,16 @@ class OfflineIntentBridge {
   void LatchOperatorReduceOnly();
   void PumpResults();
   void OnFill(const FillEvent& fill);
+  // Ordered offline economic events. Funding belongs to the actual holder at
+  // invocation; the caller must place it before the new open's execution.
+  void Mark(double mark);
+  void Funding(std::int64_t timestamp, double rate, double mark);
+  void ObserveRange(double high, double low);
   // Offline quiescent mock cut: no transport ACK outstanding, positions and
   // all open order leaves must match. Never silently replace local positions.
   bool Reconcile();
   // No automatic retries. Refused/unknown sends block until reconciliation.
-  bool Drive(double price);
+  bool Drive(double price, double mark = 0);
 
   const OrderManager& oms() const { return oms_; }
   const AccountState& account() const { return account_; }
@@ -49,6 +54,8 @@ class OfflineIntentBridge {
   bool stopped() const { return stopped_; }
   bool operator_locked() const { return operator_locked_; }
   std::size_t unique_fills() const { return fills_.size(); }
+  double risk_peak() const { return risk_peak_; }
+  double risk_drawdown() const { return risk_drawdown_; }
 
  private:
   void ApplyBar(std::int64_t timestamp, double short_feature, double long_feature,
@@ -56,6 +63,9 @@ class OfflineIntentBridge {
   void AppendState(const std::string& record);
   void CancelPending();
   void Recover();
+  void ApplyRecordedFill(const FillEvent& fill);
+  void ApplyAccountEvent(const std::string& record);
+  void Observe(double high, double low);
   [[noreturn]] void FailClosed(const char* reason);
   MockExchangeAdapter& adapter_;
   AsyncExecutor executor_;
@@ -66,11 +76,13 @@ class OfflineIntentBridge {
   std::string journal_path_;
   int lock_fd_{-1};
   std::map<std::string, FillEvent> fills_;
+  std::map<std::int64_t, std::pair<double, double>> funding_events_;
   std::set<std::string> submit_wait_, cancel_wait_, cancelling_;
   std::uint64_t version_{0}, order_sequence_{0};
   std::int64_t timestamp_{-1};
   double target_{0}, goal_qty_{0}, short_feature_{0}, long_feature_{0}, bar_price_{0};
   double risk_peak_{10000.0};
+  double risk_drawdown_{0};
   bool stopped_{false}, operator_locked_{false}, ready_{false}, faulted_{false};
 };
 
