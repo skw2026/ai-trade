@@ -1,0 +1,23 @@
+{
+  "failure_id": "1023cfa82a9f4bc7b56b2a2eb3b467a0",
+  "decision": "retry",
+  "goal": "真实bar调度器完整接入四账前的合成时钟和账务验收",
+  "expected": "11项合成测试通过，正常CSV读取成功且负例拒绝正确原因",
+  "observed": "8个正向场景在CSV_COLUMN失败；3个负例也可能被同一个解析错误提前拒绝，不能视为边界已验证。市场经济次数仍0。",
+  "root_cause_status": "confirmed",
+  "root_cause": "Python csv.writer默认输出CRLF。原生getline仅剥离LF，Split保留最后一列名末尾CR，funding_rate_per_interval因此不匹配；值列也会有同类问题。只读repr复现为funding_rate_per_interval\\r，故不是缺真实数据或模型失效。",
+  "evidence": ["tools/native_closed_loop.cpp:Split及CSV_COLUMN", "tools/test_native_closed_loop.py:csv.DictWriter", ".artifacts/native-closed-loop-20261022/native-loop.failed-crlf", ".artifacts/native-closed-loop-20261022/validation-state.json"],
+  "next_action": "仅去除每行末尾可选CR，不修改字段内容或真实输入；负例增加明确BAR_GRID/PRICE_RANGE错误断言。经限定重建后原unittest命令唯一复验，不运行历史收益。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "标准CSV兼容和真实负例出口是原调度输入合同，不改变策略与成本。",
+    "data_feasibility": "输入已固定，合成CRLF可独立生成；无需新增数据或更换历史文件。",
+    "method_feasibility": "标准行尾归一不改变任何数值；测试同时覆盖正向解析和负例原因，不通过改夹具换成LF掩盖缺陷。",
+    "budget_and_exit": "原8小时预算内限定重建和一次原命令复验；再失败先重新审查，经济次数仍不得消费。"
+  },
+  "repair_build_argv": ["cmake", "--build", ".artifacts/native-closed-loop-20261022/build", "--parallel", "8", "--target", "native_closed_loop"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

@@ -172,6 +172,13 @@ if(BUILD_TESTING)
   target_link_libraries(offline_intent_bridge_test PRIVATE Threads::Threads)
   add_test(NAME offline_intent_bridge_test COMMAND offline_intent_bridge_test)
   set_tests_properties(offline_intent_bridge_test PROPERTIES TIMEOUT 30 LABELS "offline;execution")
+  add_executable(native_closed_loop
+    tools/native_closed_loop.cpp src/research/offline_intent_bridge.cpp
+    src/exchange/mock_exchange_adapter.cpp src/execution/async_executor.cpp
+    src/execution/execution_engine.cpp src/oms/order_manager.cpp
+    src/oms/account_state.cpp src/storage/wal_store.cpp)
+  target_include_directories(native_closed_loop PRIVATE src)
+  target_link_libraries(native_closed_loop PRIVATE Threads::Threads)
 
   add_executable(financial_risk_contract_test tests/test_financial_risk_contract.cpp)
   target_link_libraries(financial_risk_contract_test PRIVATE ai_trade_system)
@@ -192,6 +199,12 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME native_closed_loop_test
+             COMMAND ${CMAKE_COMMAND} -E env
+                     "NATIVE_CLOSED_LOOP_BINARY=$<TARGET_FILE:native_closed_loop>"
+                     ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_native_closed_loop.py)
+    set_tests_properties(native_closed_loop_test PROPERTIES
+                         TIMEOUT 240 LABELS "offline;execution;synthetic")
     add_test(NAME offline_intent_policy_parity_test
              COMMAND ${CMAKE_COMMAND} -E env
                      "OFFLINE_INTENT_BRIDGE_BINARY=$<TARGET_FILE:offline_intent_bridge_test>"

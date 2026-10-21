@@ -21,7 +21,8 @@ class OfflineIntentBridge {
  public:
   OfflineIntentBridge(MockExchangeAdapter& adapter, const std::string& directory,
                       bool operator_reduce_only = false,
-                      AsyncExecutor::Mode mode = AsyncExecutor::Mode::kInlineReplay);
+                      AsyncExecutor::Mode mode = AsyncExecutor::Mode::kInlineReplay,
+                      int execution_delay_bars = 0);
   ~OfflineIntentBridge();
   OfflineIntentBridge(const OfflineIntentBridge&) = delete;
   OfflineIntentBridge& operator=(const OfflineIntentBridge&) = delete;
@@ -48,6 +49,7 @@ class OfflineIntentBridge {
   const OrderManager& oms() const { return oms_; }
   const AccountState& account() const { return account_; }
   double intent_target() const { return target_; }
+  double execution_target() const { return execution_target_; }
   double goal_qty() const { return goal_qty_; }
   std::uint64_t version() const { return version_; }
   bool ready() const { return ready_; }
@@ -81,6 +83,8 @@ class OfflineIntentBridge {
   std::uint64_t version_{0}, order_sequence_{0};
   std::int64_t timestamp_{-1};
   double target_{0}, goal_qty_{0}, short_feature_{0}, long_feature_{0}, bar_price_{0};
+  double execution_target_{0};
+  int execution_delay_bars_{0};
   double risk_peak_{10000.0};
   double risk_drawdown_{0};
   bool stopped_{false}, operator_locked_{false}, ready_{false}, faulted_{false};

@@ -48,9 +48,12 @@ bool SameFill(const FillEvent& a, const FillEvent& b) {
 }  // namespace
 
 OfflineIntentBridge::OfflineIntentBridge(MockExchangeAdapter& adapter,
-    const std::string& directory, bool operator_reduce_only, AsyncExecutor::Mode mode)
+    const std::string& directory, bool operator_reduce_only, AsyncExecutor::Mode mode,
+    int execution_delay_bars)
     : adapter_(adapter), executor_(&adapter, mode, operator_reduce_only),
-      wal_(directory + "/orders.wal"), journal_path_(directory + "/intent.events") {
+      wal_(directory + "/orders.wal"), journal_path_(directory + "/intent.events"),
+      execution_delay_bars_(execution_delay_bars) {
+  Need(execution_delay_bars == 0 || execution_delay_bars == 1, "EXECUTION_DELAY");
   std::filesystem::create_directories(directory);
   lock_fd_ = ::open((directory + "/owner.lock").c_str(), O_CREAT | O_RDWR, 0600);
   if (lock_fd_ < 0 || ::flock(lock_fd_, LOCK_EX | LOCK_NB) != 0) {
@@ -106,7 +109,11 @@ void OfflineIntentBridge::ApplyBar(std::int64_t timestamp, double xs, double xl,
   Need(std::isfinite(xs) && std::isfinite(xl) && std::fabs(xs) <= .01 &&
        std::fabs(xl) <= .01 && std::isfinite(price) && price > 0, "BAR_INPUT");
   const double next = stopped_ ? 0 : Policy(xl, Direction(target_));
-  if (next != target_) goal_qty_ = RoundQty(next / price);
+  // Pure intent advances even while its prior intent is queued for execution.
+  // Quantity is resolved at the due open, never at the feature bar's price.
+  const double due = stopped_ ? 0 : execution_delay_bars_ ? target_ : next;
+  if (due != execution_target_) goal_qty_ = RoundQty(due / price);
+  execution_target_ = due;
   target_ = next;
   timestamp_ = timestamp;
   short_feature_ = xs;
@@ -136,7 +143,7 @@ void OfflineIntentBridge::OnBar(std::int64_t timestamp, double xs, double xl,
 void OfflineIntentBridge::LatchRiskStop() {
   if (!stopped_) AppendState("R");
   stopped_ = true;
-  target_ = goal_qty_ = 0;
+  target_ = goal_qty_ = execution_target_ = 0;
   executor_.LatchSafetyWithdrawal();
 }
 
@@ -162,10 +169,11 @@ void OfflineIntentBridge::Recover() {
     Need(bytes.empty() || bytes.back() == '\n', "TORN_STATE");
     std::istringstream lines(bytes);
     std::string line;
-    Need(static_cast<bool>(std::getline(lines, line)) && line == "V 2",
+    Need(static_cast<bool>(std::getline(lines, line)) &&
+         line == "V 3 " + std::to_string(execution_delay_bars_),
          "LEGACY_OFFLINE_JOURNAL_REQUIRES_EXPLICIT_MIGRATION");
     while (std::getline(lines, line)) {
-      if (line == "R") { stopped_ = true; target_ = goal_qty_ = 0; }
+      if (line == "R") { stopped_ = true; target_ = goal_qty_ = execution_target_ = 0; }
       else if (line == "O") operator_locked_ = true;
       else if (line == "F") faulted_ = true;
       else if (line.rfind("C ", 0) == 0) {
@@ -192,7 +200,7 @@ void OfflineIntentBridge::Recover() {
   } else {
     Need(std::filesystem::file_size(std::filesystem::path(journal_path_).parent_path()/"orders.wal") == 0,
          "MISSING_EVENT_JOURNAL");
-    AppendState("V 2");
+    AppendState("V 3 " + std::to_string(execution_delay_bars_));
   }
   std::unordered_set<std::string> orders, fill_ids;
   std::unordered_map<std::string, OrderIntent> intents;
